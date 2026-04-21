@@ -40,28 +40,28 @@ Stack mandatória do MVP: Go 1.24+, Gin, PostgreSQL com SQL direto, Redis, Docke
 | Coluna | Tipo | Origem / observação |
 |---|---|---|
 | `id` | UUID (PK) | gerado por nós |
-| `chamado_id` | TEXT | do payload (`CH-2024-001234`) |
-| `tipo` | TEXT | do payload (`status_change`) |
-| `cidadao_ref` | BYTEA | derivado do CPF — não guardamos CPF em claro |
-| `status_anterior` | TEXT | do payload (enum validado na lógica de negócio) |
-| `status_novo` | TEXT | do payload (enum validado na lógica de negócio) |
-| `titulo` | TEXT | do payload |
-| `descricao` | TEXT NULL | do payload |
+| `ticket_id` | TEXT | do payload (`CH-2024-001234`) |
+| `type` | TEXT | do payload (`status_change`) |
+| `citizen_ref` | BYTEA | derivado do CPF — não guardamos CPF em claro |
+| `previous_status` | TEXT | do payload (enum validado na lógica de negócio) |
+| `new_status` | TEXT | do payload (enum validado na lógica de negócio) |
+| `title` | TEXT | do payload |
+| `description` | TEXT NULL | do payload |
 | `event_timestamp` | TIMESTAMPTZ | do payload (`timestamp`) |
 | `received_at` | TIMESTAMPTZ DEFAULT NOW() | nosso (quando chegou o webhook) |
-| `lida` | BOOLEAN DEFAULT FALSE | nosso (marcada pelo PATCH) |
-| `lida_at` | TIMESTAMPTZ NULL | nosso (quando foi marcada) |
+| `read` | BOOLEAN DEFAULT FALSE | nosso (marcada pelo PATCH) |
+| `read_at` | TIMESTAMPTZ NULL | nosso (quando foi marcada) |
 | `event_hash` | BYTEA NOT NULL UNIQUE | SHA-256 do body bruto — usado para dedup de eventos idênticos |
 
 - [ ] **R-DM-2** — Constraints **no banco**  (apenas as estruturais; validações de domínio ficam na lógica de negócio):
   - **PK** em `id`.
   - **UNIQUE** em `event_hash`.
-  - **NOT NULL** em todos os campos exceto `descricao` e `lida_at`.
-  - **DEFAULTs:** `id = gen_random_uuid()`, `received_at = NOW()`, `lida = FALSE`.
+  - **NOT NULL** em todos os campos exceto `description` e `read_at`.
+  - **DEFAULTs:** `id = gen_random_uuid()`, `received_at = NOW()`, `read = FALSE`.
 
 - [ ] **R-DM-3** — Índices:
-  - `idx_notif_cidadao_ts` sobre `(cidadao_ref, event_timestamp DESC, id DESC)`.
-  - `idx_notif_unread` índice **parcial** sobre `(cidadao_ref) WHERE lida = false`  — serve `unread-count` com footprint mínimo.
+  - `idx_notif_citizen_ts` sobre `(citizen_ref, event_timestamp DESC, id DESC)`.
+  - `idx_notif_unread` índice **parcial** sobre `(citizen_ref) WHERE read = false`  — serve `unread-count` com footprint mínimo.
 - [ ] **R-DM-4** — Retry de evento já processado (violação do `UNIQUE event_hash`) responde **`200 OK`** silencioso e não cria novo registro.
 
 ### Isolamento por cidadão (global)
@@ -73,8 +73,8 @@ Stack mandatória do MVP: Go 1.24+, Gin, PostgreSQL com SQL direto, Redis, Docke
 
 ### Webhook
 
-- [ ] **R-WH-0** — O serviço reconhece os quatro estados possíveis de um chamado: `aberto`, `em_analise`, `em_execucao`, `concluido`.
-- [ ] **R-WH-1** — O serviço recebe `POST` de webhook no formato de payload definido no enunciado (`chamado_id`, `tipo`, `cpf`, `status_anterior`, `status_novo`, `titulo`, `descricao`, `timestamp`).
+- [ ] **R-WH-0** — O serviço reconhece os quatro estados possíveis de um chamado: `open`, `under_analysis`, `in_progress`, `completed`.
+- [ ] **R-WH-1** — O serviço recebe `POST` de webhook no formato de payload definido no enunciado (`ticket_id`, `type`, `cpf`, `previous_status`, `new_status`, `title`, `description`, `timestamp`).
 - [ ] **R-WH-2** — O serviço valida o header `X-Signature-256` em toda requisição de webhook.
 - [ ] **R-WH-3** — A validação de assinatura depende de um **secret** configurado via variável de ambiente.
 - [ ] **R-WH-4** — A validação usa **HMAC-SHA256** sobre o **body cru** da requisição e comparação em tempo constante.
@@ -82,7 +82,7 @@ Stack mandatória do MVP: Go 1.24+, Gin, PostgreSQL com SQL direto, Redis, Docke
 - [ ] **R-WH-6** — **Eventos não idênticos:** se a mesma transição chegar com `timestamp` diferente ou outro campo divergente, o sistema persiste ambos os eventos.
 - [ ] **R-WH-7** — Requisição sem assinatura ou com assinatura inválida responde `401 Unauthorized`.
 - [ ] **R-WH-8** — Payload inválido responde `400 Bad Request`.
-- [ ] **R-WH-9** — O campo `tipo` aceita apenas `status_change`; qualquer outro valor responde `400 Bad Request`.
+- [ ] **R-WH-9** — O campo `type` aceita apenas `status_change`; qualquer outro valor responde `400 Bad Request`.
 - [ ] **R-WH-10** — O campo `cpf` deve conter 11 dígitos numéricos; valor fora desse formato responde `400 Bad Request`.
 - [ ] **R-WH-11** — O campo `timestamp` deve ser parseável como RFC3339; valor inválido responde `400 Bad Request`.
 - [ ] **R-WH-12** — O processamento do webhook é **síncrono até a persistência**.
@@ -115,7 +115,7 @@ Stack mandatória do MVP: Go 1.24+, Gin, PostgreSQL com SQL direto, Redis, Docke
 ### Privacidade
 
 - [ ] **R-PRIV-1** — CPF **não é persistido em claro** no banco.
-- [ ] **R-PRIV-2** — O CPF é substituído por `cidadao_ref = HMAC-SHA256(CPF, CPF_KEY)`.
+- [ ] **R-PRIV-2** — O CPF é substituído por `citizen_ref = HMAC-SHA256(CPF, CPF_KEY)`.
 - [ ] **R-PRIV-3** — `CPF_KEY` é um secret interno configurado via variável de ambiente e **distinto** de `WEBHOOK_SECRET` e da configuração de autenticação JWT (`JWT_JWKS_URL`).
 - [ ] **R-PRIV-4** — O CPF em claro só existe em memória durante autenticação e processamento da requisição.
 
@@ -134,8 +134,8 @@ Stack mandatória do MVP: Go 1.24+, Gin, PostgreSQL com SQL direto, Redis, Docke
 
 **`PATCH /notifications/:id/read`**
 
-- [ ] **R-API-2** — Marca a notificação como lida apenas se pertencer ao cidadão autenticado.
-- [ ] **R-API-2.1** — A operação é **idempotente**: marcar como lida uma notificação já lida retorna sucesso.
+- [ ] **R-API-2** — Marca a notificação como read apenas se pertencer ao cidadão autenticado.
+- [ ] **R-API-2.1** — A operação é **idempotente**: marcar como read uma notificação já read retorna sucesso.
 - [ ] **R-API-2.2** — Notificação inexistente ou pertencente a outro cidadão responde `404`.
 - [ ] **R-API-2.3** — Retorna **`200 OK`** com o recurso atualizado no body.
 
@@ -259,7 +259,7 @@ Os requisitos acima cobrem **o quê** o sistema faz; esta seção lista **o como
 - [ ] **I-PER-1** — Fluxo do webhook:
   - validar assinatura;
   - validar payload;
-  - calcular `cidadao_ref`;
+  - calcular `citizen_ref`;
   - calcular `event_hash`;
   - inserir no banco;
   - se duplicado, responder `200`;
