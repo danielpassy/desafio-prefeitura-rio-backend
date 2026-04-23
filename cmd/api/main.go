@@ -10,10 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/broadcast"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/config"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/webhook"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -36,8 +38,16 @@ func main() {
 	}
 	defer pool.Close()
 
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	defer rdb.Close()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		slog.Error("redis connection failed", "error", err)
+		os.Exit(1)
+	}
+
 	repo := storage.NewNotificationRepo(pool)
-	wh := webhook.NewHandler(repo, webhook.NoOpPublisher{}, cfg.WebhookSecret, cfg.CPFKey)
+	pub := broadcast.NewRedisPublisher(rdb)
+	wh := webhook.NewHandler(repo, pub, cfg.WebhookSecret, cfg.CPFKey)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
