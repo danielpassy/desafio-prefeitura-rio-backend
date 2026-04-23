@@ -7,7 +7,10 @@ Serviço de notificações em tempo real para chamados de manutenção urbana. R
 Instale o [Docker](https://docs.docker.com/get-started/get-docker/) e o [just](https://just.systems/man/en/packages.html), depois:
 
 ```bash
-just up
+cp .env.example .env
+just up       # sobe Postgres, Redis e mock IdP
+just migrate  # aplica as migrations
+just run      # inicia a aplicação
 ```
 
 ## Decisões
@@ -31,6 +34,16 @@ Honestamente, Redis é bastante robusto - na prática a taxa de encaminhamento b
 - Fanout nativo do pub/sub encaixa com o modelo "broadcast para todas as instâncias, cada uma entrega a quem tiver localmente".
 - Custo de código sobre in-memory é mínimo e destrava escala horizontal sem reescrita.
 - O enunciado menciona Redis como disponível e deixa o uso a critério.
+
+### Migrations separadas do processo da aplicação
+
+As migrations são aplicadas via `just migrate` (binário `cmd/migrate`), não no startup da aplicação.
+
+**Por quê:** código e schema têm perfis de risco diferentes — código reverte em segundos, schema raramente reverte sem risco de perda de dados. Acoplando os dois no startup, qualquer problema força um diagnóstico simultâneo das duas mudanças. Separando, dá para rodar a migration numa janela controlada, validar que o banco está saudável e só depois fazer o deploy do binário — além de viabilizar o padrão expand/contract necessário em rolling deploys.
+
+**Configuração:** o binário de migration usa o mesmo loader de configuração da aplicação. Isso exige que o ambiente tenha o mesmo conjunto de variáveis/secrets do serviço, mesmo que a migration use diretamente só o banco. A decisão é intencional para manter o MVP simples: no deploy esperado, migration e aplicação rodam no mesmo ambiente operacional e recebem o mesmo bundle de configuração.
+
+**Alternativa considerada:** executar no startup (o goose usa advisory lock, então múltiplas instâncias não conflitam). Rejeitado pelo motivo acima.
 
 ### Autenticação: RS256 + JWKS
 

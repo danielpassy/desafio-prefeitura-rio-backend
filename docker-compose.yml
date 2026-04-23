@@ -45,6 +45,10 @@ services:
       - "8081:8080"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/notifications
+      REDIS_ADDR: redis:6379
+      JWT_JWKS_URL: http://mock-idp:8080/default/.well-known/jwks.json
     depends_on:
       postgres:
         condition: service_healthy
