@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Notification struct {
@@ -52,27 +51,27 @@ func NewNotificationRepo(db Querier) *NotificationRepo {
 	return &NotificationRepo{db: db}
 }
 
-// Insert persists a new notification. Returns (false, nil) when event_hash
-// already exists (duplicate event), (true, nil) on success.
-func (r *NotificationRepo) Insert(ctx context.Context, p InsertParams) (inserted bool, err error) {
+// Insert persists a new notification. Returns nil when event_hash already
+// exists (duplicate event — caller should respond 200 without re-publishing).
+func (r *NotificationRepo) Insert(ctx context.Context, p InsertParams) (*Notification, error) {
 	const q = `
 		INSERT INTO notifications
 			(ticket_id, type, citizen_ref, previous_status, new_status,
 			 title, description, event_timestamp, event_hash)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		ON CONFLICT (event_hash) DO NOTHING
+		RETURNING id, ticket_id, type, citizen_ref, previous_status, new_status,
+		          title, description, event_timestamp, received_at, read, read_at, event_hash`
 
-	_, err = r.db.Exec(ctx, q,
+	row := r.db.QueryRow(ctx, q,
 		p.TicketID, p.Type, p.CitizenRef, p.PreviousStatus, p.NewStatus,
 		p.Title, p.Description, p.EventTimestamp, p.EventHash,
 	)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
-			return false, nil
-		}
-		return false, err
+	n, err := scanNotification(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
-	return true, nil
+	return n, err
 }
 
 func (r *NotificationRepo) FindByID(ctx context.Context, id uuid.UUID, citizenRef []byte) (*Notification, error) {

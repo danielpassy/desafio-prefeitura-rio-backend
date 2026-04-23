@@ -8,28 +8,17 @@ import (
 	"time"
 
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var testDB *pgxpool.Pool
 
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgres://app:app@localhost:5432/notifications"
-	}
-
-	ctx := context.Background()
-	pool, err := storage.NewPool(ctx, dsn)
+	pool, err := testutil.NewTestDB("../../migrations")
 	if err != nil {
-		log.Printf("skipping storage tests: postgres unavailable: %v", err)
-		os.Exit(0)
+		log.Fatalf("storage tests require postgres: %v", err)
 	}
-
-	if err := storage.RunMigrations(ctx, pool, "../../migrations"); err != nil {
-		log.Fatalf("migrations: %v", err)
-	}
-
 	testDB = pool
 	code := m.Run()
 	pool.Close()
@@ -65,12 +54,12 @@ func TestInsert_Success(t *testing.T) {
 	repo := testRepo(t)
 	ctx := context.Background()
 
-	inserted, err := repo.Insert(ctx, baseParams())
+	n, err := repo.Insert(ctx, baseParams())
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	if !inserted {
-		t.Fatal("expected inserted=true")
+	if n == nil {
+		t.Fatal("expected non-nil notification on first insert")
 	}
 }
 
@@ -83,12 +72,12 @@ func TestInsert_DuplicateEventHash(t *testing.T) {
 		t.Fatalf("first insert: %v", err)
 	}
 
-	inserted, err := repo.Insert(ctx, p)
+	n, err := repo.Insert(ctx, p)
 	if err != nil {
 		t.Fatalf("duplicate insert returned error: %v", err)
 	}
-	if inserted {
-		t.Fatal("expected inserted=false for duplicate event_hash")
+	if n != nil {
+		t.Fatal("expected nil for duplicate event_hash")
 	}
 }
 
@@ -103,12 +92,12 @@ func TestInsert_DifferentHashSameTransition(t *testing.T) {
 	if _, err := repo.Insert(ctx, p1); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	inserted, err := repo.Insert(ctx, p2)
+	n, err := repo.Insert(ctx, p2)
 	if err != nil {
 		t.Fatalf("second insert: %v", err)
 	}
-	if !inserted {
-		t.Fatal("expected inserted=true for different event_hash")
+	if n == nil {
+		t.Fatal("expected non-nil notification for different event_hash")
 	}
 }
 
