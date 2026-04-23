@@ -293,6 +293,12 @@ Os requisitos acima cobrem **o quê** o sistema faz; esta seção lista **o como
 
 - [ ] **I-CFG-7** — `WEBHOOK_SECRET`, `CPF_KEY` e a configuração de autenticação JWT têm papéis distintos e não devem ser reutilizados entre si.
 
+### Migrations
+
+- [ ] **I-MIG-1** — As migrations são aplicadas via comando separado (`just migrate` / `cmd/migrate`), não no startup do processo da aplicação.
+- [ ] **I-MIG-2** — O binário `cmd/migrate` lê `DATABASE_URL` do ambiente, aplica as migrations pendentes com goose e encerra.
+- [ ] **I-MIG-3** — Decisão: migrations fora do processo da aplicação. Código e schema têm perfis de risco diferentes — código reverte em segundos, schema raramente reverte sem risco. Acoplando os dois, qualquer incidente exige diagnóstico simultâneo das duas mudanças e inviabiliza o padrão expand/contract necessário em rolling deploys.
+
 ### Infraestrutura e runtime
 
 - [ ] **I-INF-1** — O `docker-compose` do ambiente local deve subir pelo menos: aplicação, Postgres, Redis e mock de IdP.

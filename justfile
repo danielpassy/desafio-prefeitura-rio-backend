@@ -1,3 +1,5 @@
+set dotenv-load := true
+
 default:
     just --list
 
@@ -9,6 +11,9 @@ up-app:
 
 down:
     docker compose down
+
+migrate:
+    go run ./cmd/migrate
 
 run:
     go run ./cmd/api
