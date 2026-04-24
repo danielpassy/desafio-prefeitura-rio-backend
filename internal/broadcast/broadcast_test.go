@@ -2,32 +2,17 @@ package broadcast_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/broadcast"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/testutil"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 )
 
-func newTestRedis(t *testing.T) *redis.Client {
-	t.Helper()
-	addr := os.Getenv("REDIS_ADDR")
-	if addr == "" {
-		addr = "localhost:6379"
-	}
-	rdb := redis.NewClient(&redis.Options{Addr: addr})
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		t.Skipf("redis unavailable at %s: %v", addr, err)
-	}
-	t.Cleanup(func() { rdb.Close() })
-	return rdb
-}
-
 func TestPublishSubscribe(t *testing.T) {
-	rdb := newTestRedis(t)
+	rdb := testutil.NewTestRedis(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -80,7 +65,7 @@ func TestPublishSubscribe(t *testing.T) {
 }
 
 func TestSubscribe_ContextCancel_ClosesChannel(t *testing.T) {
-	rdb := newTestRedis(t)
+	rdb := testutil.NewTestRedis(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sub := broadcast.NewRedisSubscriber(rdb)
@@ -99,7 +84,7 @@ func TestSubscribe_ContextCancel_ClosesChannel(t *testing.T) {
 }
 
 func TestPublish_IsolatedByChannel(t *testing.T) {
-	rdb := newTestRedis(t)
+	rdb := testutil.NewTestRedis(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
