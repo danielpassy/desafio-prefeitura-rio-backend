@@ -11,7 +11,7 @@ Após cada commit, verificar `read-detalhado-e-duvidas.md` para confirmar cobert
 - [x] 4 — Auth middleware — JWT RS256 + JWKS, extração de CPF do claim preferred_username
 - [x] 5 — Webhook handler — validação HMAC-SHA256, payload, citizen_ref, event_hash, persistência
 - [x] 6 — Broadcast — Redis pub/sub, publisher e subscriber
-- [ ] 7 — REST API — GET /notifications, PATCH /notifications/:id/read, GET /notifications/unread-count
+- [x] 7 — REST API — GET /notifications, PATCH /notifications/:id/read, GET /notifications/unread-count
 - [ ] 8 — WebSocket — GET /ws, broadcaster local, múltiplas conexões, heartbeat
 - [ ] 9 — README final — como rodar, decisões, o que faria diferente
 

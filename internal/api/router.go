@@ -19,13 +19,13 @@ type RouterParams struct {
 
 func NewRouter(p RouterParams) *gin.Engine {
 	wh := webhook.NewHandler(p.Notifications, p.Publisher, p.WebhookSecret, p.CPFKey)
-	nh := notification.NewHandler(p.Notifications, p.CPFKey)
+	nh := notification.NewHandler(p.Notifications)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.POST("/webhook", wh.Handle)
 
-	api := r.Group("/", auth.AuthMiddleware(p.Keyfunc))
+	api := r.Group("/", auth.AuthMiddleware(p.Keyfunc, []byte(p.CPFKey)))
 	api.GET("/notifications", nh.List)
 	api.GET("/notifications/unread-count", nh.UnreadCount)
 	api.PATCH("/notifications/:id/read", nh.MarkRead)

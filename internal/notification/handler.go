@@ -1,8 +1,6 @@
 package notification
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"net/http"
 	"time"
 
@@ -35,16 +33,15 @@ type listResponse struct {
 }
 
 type Handler struct {
-	repo   *storage.NotificationRepo
-	cpfKey []byte
+	repo *storage.NotificationRepo
 }
 
-func NewHandler(repo *storage.NotificationRepo, cpfKey string) *Handler {
-	return &Handler{repo: repo, cpfKey: []byte(cpfKey)}
+func NewHandler(repo *storage.NotificationRepo) *Handler {
+	return &Handler{repo: repo}
 }
 
 func (h *Handler) List(c *gin.Context) {
-	cpf, ok := auth.CPFFromContext(c.Request.Context())
+	citizenRef, ok := auth.CitizenRefFromContext(c.Request.Context())
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -56,7 +53,7 @@ func (h *Handler) List(c *gin.Context) {
 	}
 
 	items, total, err := h.repo.List(c.Request.Context(), storage.ListParams{
-		CitizenRef: h.citizenRef(cpf),
+		CitizenRef: citizenRef,
 		Limit:      limit,
 		Offset:     offset,
 	})
@@ -78,7 +75,7 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 func (h *Handler) MarkRead(c *gin.Context) {
-	cpf, ok := auth.CPFFromContext(c.Request.Context())
+	citizenRef, ok := auth.CitizenRefFromContext(c.Request.Context())
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -90,7 +87,7 @@ func (h *Handler) MarkRead(c *gin.Context) {
 		return
 	}
 
-	n, err := h.repo.MarkRead(c.Request.Context(), id, h.citizenRef(cpf))
+	n, err := h.repo.MarkRead(c.Request.Context(), id, citizenRef)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
@@ -103,24 +100,18 @@ func (h *Handler) MarkRead(c *gin.Context) {
 }
 
 func (h *Handler) UnreadCount(c *gin.Context) {
-	cpf, ok := auth.CPFFromContext(c.Request.Context())
+	citizenRef, ok := auth.CitizenRefFromContext(c.Request.Context())
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	count, err := h.repo.CountUnread(c.Request.Context(), h.citizenRef(cpf))
+	count, err := h.repo.CountUnread(c.Request.Context(), citizenRef)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"unread_count": count})
-}
-
-func (h *Handler) citizenRef(cpf string) []byte {
-	mac := hmac.New(sha256.New, h.cpfKey)
-	mac.Write([]byte(cpf))
-	return mac.Sum(nil)
 }
 
 func toResponse(n storage.Notification) notificationResponse {
@@ -138,4 +129,3 @@ func toResponse(n storage.Notification) notificationResponse {
 		ReadAt:         n.ReadAt,
 	}
 }
-

@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,10 +13,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-type cpfContextKey struct{}
+type citizenRefContextKey struct{}
 
-func CPFFromContext(ctx context.Context) (string, bool) {
-	v, ok := ctx.Value(cpfContextKey{}).(string)
+func CitizenRefFromContext(ctx context.Context) ([]byte, bool) {
+	v, ok := ctx.Value(citizenRefContextKey{}).([]byte)
 	return v, ok
 }
 
@@ -26,9 +28,10 @@ func NewJWKSKeyfunc(ctx context.Context, jwksURL string) (keyfunc.Keyfunc, error
 	return kf, nil
 }
 
-// AuthMiddleware validates the Bearer JWT and sets the citizen's CPF in the context.
+// AuthMiddleware validates the Bearer JWT, derives the citizen's citizenRef
+// via HMAC-SHA256(preferred_username, cpfKey), and sets it in the context.
 // Rejects with 401 if the token is missing, malformed, expired, or has no preferred_username.
-func AuthMiddleware(kf keyfunc.Keyfunc) gin.HandlerFunc {
+func AuthMiddleware(kf keyfunc.Keyfunc, cpfKey []byte) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, err := parseAndValidateBearerToken(c.GetHeader("Authorization"), kf)
 		if err != nil {
@@ -48,7 +51,8 @@ func AuthMiddleware(kf keyfunc.Keyfunc) gin.HandlerFunc {
 			return
 		}
 
-		ctx := context.WithValue(c.Request.Context(), cpfContextKey{}, cpf)
+		citizenRef := computeHMAC([]byte(cpf), cpfKey)
+		ctx := context.WithValue(c.Request.Context(), citizenRefContextKey{}, citizenRef)
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
@@ -61,4 +65,10 @@ func parseAndValidateBearerToken(header string, kf keyfunc.Keyfunc) (*jwt.Token,
 	}
 
 	return jwt.Parse(bearer, kf.Keyfunc, jwt.WithValidMethods([]string{"RS256"}))
+}
+
+func computeHMAC(data, key []byte) []byte {
+	mac := hmac.New(sha256.New, key)
+	mac.Write(data)
+	return mac.Sum(nil)
 }

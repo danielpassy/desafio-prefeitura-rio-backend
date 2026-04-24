@@ -1,7 +1,10 @@
 package auth_test
 
 import (
+	"crypto/hmac"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +17,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+const testCPFKey = "test-cpf-key"
 
 var (
 	testPrivKey *rsa.PrivateKey
@@ -52,10 +57,10 @@ func validClaims(cpf string) jwt.MapClaims {
 func makeRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(auth.AuthMiddleware(testKf))
+	r.Use(auth.AuthMiddleware(testKf, []byte(testCPFKey)))
 	r.GET("/test", func(c *gin.Context) {
-		cpf, _ := auth.CPFFromContext(c.Request.Context())
-		c.JSON(http.StatusOK, gin.H{"cpf": cpf})
+		ref, _ := auth.CitizenRefFromContext(c.Request.Context())
+		c.JSON(http.StatusOK, gin.H{"citizen_ref": hex.EncodeToString(ref)})
 	})
 	return r
 }
@@ -133,7 +138,6 @@ func TestAuthMiddleware_MissingPreferredUsername(t *testing.T) {
 }
 
 func TestAuthMiddleware_WrongAlgorithm(t *testing.T) {
-	// sign with HMAC instead of RS256
 	claims := validClaims("12345678901")
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, _ := tok.SignedString([]byte("secret"))
@@ -149,8 +153,9 @@ func TestAuthMiddleware_WrongAlgorithm(t *testing.T) {
 	}
 }
 
-func TestCPFFromContext(t *testing.T) {
-	token := signToken(t, validClaims("12345678901"))
+func TestCitizenRefFromContext(t *testing.T) {
+	cpf := "12345678901"
+	token := signToken(t, validClaims(cpf))
 	r := makeRouter()
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -158,9 +163,15 @@ func TestCPFFromContext(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
+	mac := hmac.New(sha256.New, []byte(testCPFKey))
+	mac.Write([]byte(cpf))
+	want := hex.EncodeToString(mac.Sum(nil))
+
 	var body map[string]string
-	json.NewDecoder(w.Body).Decode(&body)
-	if body["cpf"] != "12345678901" {
-		t.Errorf("cpf = %q, want %q", body["cpf"], "12345678901")
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["citizen_ref"] != want {
+		t.Errorf("citizen_ref = %q, want %q", body["citizen_ref"], want)
 	}
 }

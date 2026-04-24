@@ -64,6 +64,21 @@ O JWT do cidadão é assinado com **RS256** (criptografia assimétrica) e a chav
 - JWKS é o mecanismo padrão OIDC para distribuição e rotação de chave pública — qualquer IdP sério expõe `/.well-known/jwks.json`.
 - Para desenvolvimento, subimos um **mock de IdP no compose** que expõe um JWKS de teste e emite tokens assinados; a aplicação não distingue mock de produção.
 
+### Privacidade do CPF: citizen_ref
+
+O enunciado exige que o CPF não apareça no banco. A solução adotada é substituí-lo por `citizen_ref = HMAC-SHA256(cpf, CPF_KEY)`, onde `CPF_KEY` é um secret distinto do `WEBHOOK_SECRET` e da configuração JWT.
+
+O objetivo além de cumprir o requisito foi **minimizar o trecho do sistema em que o CPF circula em plaintext**. O CPF aparece em dois pontos de entrada:
+
+- **Webhook:** vem no body JSON, o handler computa o `citizen_ref` imediatamente e descarta o CPF — ele nunca é persistido nem repassado adiante.
+- **REST/WebSocket:** vem no claim `preferred_username` do JWT; o auth middleware computa o `citizen_ref` e armazena apenas ele no contexto da requisição — os handlers nunca têm acesso ao CPF em si.
+
+Em ambos os casos, o CPF existe apenas em memória durante o processamento de uma única requisição. Quem acessa o banco vê só o hash; quem acessa os handlers vê só o `citizen_ref`. O CPF nunca é logado, propagado entre camadas nem armazenado.
+
+Uma consequência prática dessa abordagem é que o `citizen_ref` se torna **cidadão de primeira classe para desenvolvedores e operadores**: logs, stack traces, métricas e queries de debug expõem apenas o hash. Não há configuração especial de mascaramento necessária — privacidade é o comportamento default, não uma camada adicionada depois.
+
+**Tradeoff:** `citizen_ref` é determinístico — o mesmo CPF sempre gera o mesmo hash com a mesma chave. Isso é intencional (precisamos correlacionar webhook com REST), mas significa que um atacante com acesso ao banco e à `CPF_KEY` consegue recalcular qualquer `citizen_ref`. A proteção depende do sigilo da `CPF_KEY`, não da irreversibilidade matemática do hash.
+
 ### Testes HTTP: um único router compartilhado
 
 Os testes HTTP do projeto usam o mesmo router compartilhado da aplicação, em vez de montar routers mínimos por arquivo de teste. A decisão é intencional: o projeto é pequeno, então aceitamos um setup de teste um pouco mais pesado em troca de reduzir duplicação e evitar drift entre o wiring real e o wiring de teste.
