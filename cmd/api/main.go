@@ -53,11 +53,13 @@ func main() {
 
 	repo := storage.NewNotificationRepo(pool)
 	pub := broadcast.NewRedisPublisher(rdb)
+	sub := broadcast.NewRedisSubscriber(rdb)
 
 	r := api.NewRouter(api.RouterParams{
 		Keyfunc:       kf,
 		Notifications: repo,
 		Publisher:     pub,
+		Subscriber:    sub,
 		WebhookSecret: cfg.WebhookSecret,
 		CPFKey:        cfg.CPFKey,
 	})

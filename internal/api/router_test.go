@@ -15,6 +15,7 @@ import (
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/testutil"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/webhook"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -56,6 +57,7 @@ func testRouter(t *testing.T) *gin.Engine {
 		Keyfunc:       fixture.Keyfunc,
 		Notifications: repo,
 		Publisher:     webhook.NoOpPublisher{},
+		Subscriber:    ws.NoOpSubscriber{},
 		WebhookSecret: "test-webhook-secret",
 		CPFKey:        "test-cpf-key",
 	})

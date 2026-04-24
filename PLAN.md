@@ -12,8 +12,15 @@ Após cada commit, verificar `read-detalhado-e-duvidas.md` para confirmar cobert
 - [x] 5 — Webhook handler — validação HMAC-SHA256, payload, citizen_ref, event_hash, persistência
 - [x] 6 — Broadcast — Redis pub/sub, publisher e subscriber
 - [x] 7 — REST API — GET /notifications, PATCH /notifications/:id/read, GET /notifications/unread-count
-- [ ] 8 — WebSocket — GET /ws, broadcaster local, múltiplas conexões, heartbeat
+- [x] 8 — WebSocket — GET /ws, broadcaster local, múltiplas conexões, heartbeat
 - [ ] 9 — README final — como rodar, decisões, o que faria diferente
+
+
+- [ ] 10 - Tracing com OpenTelemetry
+- [ ] 11 - Load test with k6
+- [ ] 12 - Dead letter queue para webhooks que falharam na persistência
+- [ ] 13 - Circuit breaker para dependências externas
+- [ ] 14 - Manifests Kubernetes
 
 - [ ] 10 - Melhorias 1: auth_test.go cria um teste, monta router, será que isso pode ser extraído e compartilhado entre módulos?
 - [ ] 11 - mudar para um validador mais robusto a la pydantic/zod
