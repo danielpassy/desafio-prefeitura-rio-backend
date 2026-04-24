@@ -64,6 +64,16 @@ O JWT do cidadão é assinado com **RS256** (criptografia assimétrica) e a chav
 - JWKS é o mecanismo padrão OIDC para distribuição e rotação de chave pública — qualquer IdP sério expõe `/.well-known/jwks.json`.
 - Para desenvolvimento, subimos um **mock de IdP no compose** que expõe um JWKS de teste e emite tokens assinados; a aplicação não distingue mock de produção.
 
+### Testes HTTP: um único router compartilhado
+
+Os testes HTTP do projeto usam o mesmo router compartilhado da aplicação, em vez de montar routers mínimos por arquivo de teste. A decisão é intencional: o projeto é pequeno, então aceitamos um setup de teste um pouco mais pesado em troca de reduzir duplicação e evitar drift entre o wiring real e o wiring de teste.
+
+**Tradeoff aceito:** alguns testes precisam de fixtures extras que não seriam estritamente necessárias em um teste mais isolado, porque o bootstrap do router real exige dependências adicionais. Ainda assim, por enquanto isso simplifica o repositório como um todo: o setup fica unificado, menos verboso e menos sujeito a ficar desatualizado quando a montagem do router mudar.
+
+**Motivo principal da escolha:** usando o router real, os testes pegam mudanças de comportamento na composição HTTP da aplicação — por exemplo, rota removida, método trocado, middleware esquecido ou endpoint movido de grupo. Com routers mínimos duplicados, esse tipo de regressão pode passar despercebido.
+
+**Quando revisitar:** se desempenho de testes ou custo de setup se tornar um problema real, podemos reintroduzir montagem minimalista por teste nos pontos em que isso trouxer ganho claro. Enquanto isso não acontecer, preferimos manter um único router como fonte de verdade.
+
 ## Dúvidas / pontos em aberto
 
 - **Eventos duplicados, mas não idênticos:** a mesma transição para o mesmo `chamado_id` chegando com `timestamps` (ou outros campos) diferentes — deduplicar ou persistir ambos? Adotamos por ora persistir ambos (não descartar informação potencialmente legítima), mas o comportamento esperado não está definido no enunciado.

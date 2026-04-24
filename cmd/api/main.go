@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/api"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/auth"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/broadcast"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/config"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
-	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/webhook"
-	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -45,14 +45,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	kf, err := auth.NewJWKSKeyfunc(ctx, cfg.JWTJWKSURL)
+	if err != nil {
+		slog.Error("jwks init failed", "error", err)
+		os.Exit(1)
+	}
+
 	repo := storage.NewNotificationRepo(pool)
 	pub := broadcast.NewRedisPublisher(rdb)
-	wh := webhook.NewHandler(repo, pub, cfg.WebhookSecret, cfg.CPFKey)
 
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.New()
-	r.Use(gin.Recovery())
-	r.POST("/webhook", wh.Handle)
+	r := api.NewRouter(api.RouterParams{
+		Keyfunc:       kf,
+		Notifications: repo,
+		Publisher:     pub,
+		WebhookSecret: cfg.WebhookSecret,
+		CPFKey:        cfg.CPFKey,
+	})
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

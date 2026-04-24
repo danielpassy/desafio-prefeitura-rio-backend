@@ -1,10 +1,7 @@
 package auth_test
 
 import (
-	"context"
-	"crypto/rand"
 	"crypto/rsa"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,13 +10,10 @@ import (
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/auth"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/testutil"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
-
-func encodeBase64URL(b []byte) string {
-	return base64.RawURLEncoding.EncodeToString(b)
-}
 
 var (
 	testPrivKey *rsa.PrivateKey
@@ -27,48 +21,15 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	var err error
-	testPrivKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	fixture, err := testutil.NewJWKSFixture()
 	if err != nil {
 		panic(err)
 	}
-
-	// serve a minimal JWKS with the test public key
-	jwksServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := testPrivKey.PublicKey.N.Bytes()
-		e := []byte{0x01, 0x00, 0x01} // 65537
-
-		type jwkKey struct {
-			Kty string `json:"kty"`
-			Alg string `json:"alg"`
-			Use string `json:"use"`
-			N   string `json:"n"`
-			E   string `json:"e"`
-		}
-		type jwks struct {
-			Keys []jwkKey `json:"keys"`
-		}
-
-		body, _ := json.Marshal(jwks{Keys: []jwkKey{{
-			Kty: "RSA",
-			Alg: "RS256",
-			Use: "sig",
-			N:   encodeBase64URL(n),
-			E:   encodeBase64URL(e),
-		}}})
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(body)
-	}))
-
-	ctx := context.Background()
-	kf, err := auth.NewJWKSKeyfunc(ctx, jwksServer.URL)
-	if err != nil {
-		panic(err)
-	}
-	testKf = kf
+	testPrivKey = fixture.PrivateKey
+	testKf = fixture.Keyfunc
 
 	m.Run()
-	jwksServer.Close()
+	fixture.Close()
 }
 
 func signToken(t *testing.T, claims jwt.MapClaims) string {

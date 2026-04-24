@@ -13,6 +13,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/MicahParks/keyfunc/v3"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/api"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/testutil"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/webhook"
@@ -26,16 +28,27 @@ const (
 	testCPF    = "12345678901"
 )
 
-var testDB *pgxpool.Pool
+var (
+	testDB *pgxpool.Pool
+	testKf keyfunc.Keyfunc
+)
 
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
+
+	fixture, err := testutil.NewJWKSFixture()
+	if err != nil {
+		log.Fatalf("jwks fixture: %v", err)
+	}
+	testKf = fixture.Keyfunc
+
 	pool, err := testutil.NewTestDB("../../migrations")
 	if err != nil {
 		log.Fatalf("webhook tests require postgres: %v", err)
 	}
 	testDB = pool
 	code := m.Run()
+	fixture.Close()
 	pool.Close()
 	os.Exit(code)
 }
@@ -49,10 +62,13 @@ func testRouter(t *testing.T) (*gin.Engine, *storage.NotificationRepo, func()) {
 	cleanup := func() { tx.Rollback(context.Background()) }
 
 	repo := storage.NewNotificationRepo(tx)
-	h := webhook.NewHandler(repo, webhook.NoOpPublisher{}, testSecret, testCPFKey)
-
-	r := gin.New()
-	r.POST("/webhook", h.Handle)
+	r := api.NewRouter(api.RouterParams{
+		Keyfunc:       testKf,
+		Notifications: repo,
+		Publisher:     webhook.NoOpPublisher{},
+		WebhookSecret: testSecret,
+		CPFKey:        testCPFKey,
+	})
 	return r, repo, cleanup
 }
 
