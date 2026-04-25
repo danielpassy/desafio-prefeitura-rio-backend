@@ -15,6 +15,8 @@ import (
 
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var cpfRe = regexp.MustCompile(`^\d{11}$`)
@@ -97,6 +99,13 @@ func (h *Handler) Handle(c *gin.Context) {
 	hashArr := sha256.Sum256(body)
 	eventHash := hashArr[:]
 
+	span := trace.SpanFromContext(c.Request.Context())
+	span.SetAttributes(
+		attribute.String("webhook.ticket_id", p.TicketID),
+		attribute.String("webhook.type", p.Type),
+		attribute.String("webhook.new_status", p.NewStatus),
+	)
+
 	n, err := h.repo.Insert(c.Request.Context(), storage.InsertParams{
 		TicketID:       p.TicketID,
 		Type:           p.Type,
@@ -116,6 +125,7 @@ func (h *Handler) Handle(c *gin.Context) {
 
 	if n == nil {
 		// duplicate — idempotent 200 with no re-publish (R-WH-15)
+		span.SetAttributes(attribute.Bool("webhook.duplicate", true))
 		c.Status(http.StatusOK)
 		return
 	}

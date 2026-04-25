@@ -39,6 +39,19 @@ services:
       timeout: 5s
       retries: 10
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.62
+    ports:
+      - "16686:16686"  # UI
+      - "4317:4317"    # OTLP gRPC
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:16686/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   app:
     build: .
     ports:
@@ -49,6 +62,7 @@ services:
       DATABASE_URL: postgres://app:app@postgres:5432/notifications
       REDIS_ADDR: redis:6379
       JWT_JWKS_URL: http://mock-idp:8080/default/.well-known/jwks.json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     depends_on:
       postgres:
         condition: service_healthy

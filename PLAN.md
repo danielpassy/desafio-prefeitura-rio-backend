@@ -22,8 +22,8 @@ Após cada commit, verificar `read-detalhado-e-duvidas.md` para confirmar cobert
 - [ ] 13 - Circuit breaker para dependências externas
 - [ ] 14 - Manifests Kubernetes
 
-- [ ] 10 - Melhorias 1: auth_test.go cria um teste, monta router, será que isso pode ser extraído e compartilhado entre módulos?
-- [ ] 11 - mudar para um validador mais robusto a la pydantic/zod
-- [ ] 12 - testar que consigo rodar tudo dentro do docker
-- [ ] 13 - mudar pra property test.
-- [ ] 14 - limites/CORS
+- [ ] 15 - Melhorias 1: auth_test.go cria um teste, monta router, será que isso pode ser extraído e compartilhado entre módulos?
+- [ ] 16 - mudar para um validador mais robusto a la pydantic/zod
+- [ ] 17 - testar que consigo rodar tudo dentro do docker
+- [ ] 18 - mudar pra property test.
+- [ ] 19 - limites/CORS

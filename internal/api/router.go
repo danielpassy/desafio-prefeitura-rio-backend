@@ -8,6 +8,7 @@ import (
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/webhook"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/ws"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 type RouterParams struct {
@@ -25,7 +26,7 @@ func NewRouter(p RouterParams) *gin.Engine {
 	wsh := ws.NewHandler(p.Subscriber)
 
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.Use(otelgin.Middleware("notifications-api"), gin.Recovery())
 	r.POST("/webhook", wh.Handle)
 
 	api := r.Group("/", auth.AuthMiddleware(p.Keyfunc, []byte(p.CPFKey)))

@@ -15,6 +15,8 @@ import (
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/broadcast"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/config"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/telemetry"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -31,6 +33,13 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
+	shutdownTracer, err := telemetry.Setup(ctx, "notifications-api", cfg.OTELEndpoint)
+	if err != nil {
+		slog.Error("otel setup failed", "error", err)
+		os.Exit(1)
+	}
+	defer shutdownTracer(context.Background()) //nolint:errcheck
+
 	pool, err := storage.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("database connection failed", "error", err)
@@ -40,6 +49,10 @@ func main() {
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer rdb.Close()
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		slog.Error("redis otel hook failed", "error", err)
+		os.Exit(1)
+	}
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		slog.Error("redis connection failed", "error", err)
 		os.Exit(1)

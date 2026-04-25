@@ -14,6 +14,7 @@ type Config struct {
 	WebhookSecret string
 	CPFKey        string
 	JWTJWKSURL    string
+	OTELEndpoint  string
 }
 
 func Load() (*Config, error) {
@@ -23,7 +24,8 @@ func Load() (*Config, error) {
 		RedisAddr:     os.Getenv("REDIS_ADDR"),
 		WebhookSecret: os.Getenv("WEBHOOK_SECRET"),
 		CPFKey:        os.Getenv("CPF_KEY"),
-		JWTJWKSURL:    os.Getenv("JWT_JWKS_URL"),
+		JWTJWKSURL:   os.Getenv("JWT_JWKS_URL"),
+		OTELEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
