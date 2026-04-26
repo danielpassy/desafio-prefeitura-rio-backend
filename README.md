@@ -13,6 +13,37 @@ just migrate  # aplica as migrations
 just run      # inicia a aplicação
 ```
 
+## Kubernetes
+
+Os manifests estão em `k8s/`. **Secrets nunca são commitados** — devem ser criados manualmente antes de aplicar os demais recursos.
+
+```bash
+# 1. namespace
+kubectl apply -f k8s/namespace.yaml
+
+# 2. secrets (ajuste os valores antes de executar)
+kubectl -n notifications create secret generic postgres-credentials \
+  --from-literal=POSTGRES_USER=app \
+  --from-literal=POSTGRES_PASSWORD=<senha> \
+  --from-literal=POSTGRES_DB=notifications
+
+kubectl -n notifications create secret generic app-secrets \
+  --from-literal=DATABASE_URL=postgres://app:<senha>@postgres:5432/notifications \
+  --from-literal=WEBHOOK_SECRET=<secret> \
+  --from-literal=CPF_KEY=<chave>
+
+# 3. demais recursos
+kubectl apply -f k8s/redis/
+kubectl apply -f k8s/postgres/
+kubectl apply -f k8s/app/
+```
+
+Antes do deploy da aplicação, edite `k8s/app/configmap.yaml` com a URL real do IdP em `JWT_JWKS_URL` e `k8s/app/deployment.yaml` com a imagem correta em `image`.
+
+As migrations devem ser rodadas manualmente (`just migrate`) no ambiente de destino antes de subir o Deployment.
+
+> **Nota:** o StatefulSet de Postgres aqui é apenas para demonstração. Em produção, um managed database (Aurora, Cloud Spanner, Cloud SQL, RDS) é a escolha mais adequada: backup automatizado, failover, point-in-time recovery e patches de segurança sem gestão manual. O mesmo vale para Redis — ElastiCache, Memorystore e similares eliminam a operação do StatefulSet.
+
 ## Decisões
 
 ### Acoplamento webhook → broadcaster do WebSocket: Redis pub/sub
@@ -78,6 +109,20 @@ Em ambos os casos, o CPF existe apenas em memória durante o processamento de um
 Uma consequência prática dessa abordagem é que o `citizen_ref` se torna **cidadão de primeira classe para desenvolvedores e operadores**: logs, stack traces, métricas e queries de debug expõem apenas o hash. Não há configuração especial de mascaramento necessária — privacidade é o comportamento default, não uma camada adicionada depois.
 
 **Tradeoff:** `citizen_ref` é determinístico — o mesmo CPF sempre gera o mesmo hash com a mesma chave. Isso é intencional (precisamos correlacionar webhook com REST), mas significa que um atacante com acesso ao banco e à `CPF_KEY` consegue recalcular qualquer `citizen_ref`. A proteção depende do sigilo da `CPF_KEY`, não da irreversibilidade matemática do hash.
+
+### Dead Letter Queue: Redis com AOF
+
+Quando o `repo.Insert` falha (banco indisponível, timeout etc.), o payload já validado é enfileirado numa lista Redis (`dlq:webhooks`). Um worker em background drena essa fila e retenta a persistência quando o banco voltar, até `MaxAttempts = 5`. O sender recebe 500 e pode retentar por conta própria — a DLQ é uma rede de segurança para o caso em que o banco volte depois que o sender desistiu.
+
+**Configuração Redis e o tradeoff de durabilidade:** Redis é in-memory por padrão. Para os itens da DLQ sobreviverem a um restart, é necessário habilitar AOF (`appendonly yes`). A escolha de `appendfsync` tem impacto direto:
+
+- `always` — fsync em toda escrita, máxima durabilidade, mas penalidade de I/O significativa. **Incompatível com pub/sub em alta frequência:** o `PUBLISH` passa pelo AOF e fica limitado à velocidade do disco.
+- `everysec` — fsync a cada 1 segundo em background; perda máxima de 1 segundo de dados em queda abrupta. Impacto de throughput desprezível (~1-2%).
+- `no` — deixa o SO decidir; sem garantia.
+
+**O que foi adotado:** uma única instância Redis com `appendfsync everysec`, aplicado ao servidor inteiro (AOF não é por chave ou estrutura). A perda máxima de 1 segundo de itens de DLQ é aceitável para notificações de chamados municipais — não é informação de natureza bancária onde qualquer perda é inaceitável.
+
+**Melhoria conhecida para produção (K8s):** o ideal são dois Redis separados — um dedicado à DLQ com `appendfsync always` (escritas excepcionais, baixo throughput, alta durabilidade) e outro para pub/sub sem AOF (alta frequência, entrega best-effort por design). No Kubernetes isso se traduz em dois `Deployment` + `Service` distintos, cada um com seu `ConfigMap` de `redis.conf`. A decisão de usar uma instância única é de simplicidade para esta demonstração.
 
 ### Testes HTTP: um único router compartilhado
 
