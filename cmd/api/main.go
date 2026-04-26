@@ -14,6 +14,7 @@ import (
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/auth"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/broadcast"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/config"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/dlq"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/telemetry"
 	"github.com/redis/go-redis/extra/redisotel/v9"
@@ -68,10 +69,15 @@ func main() {
 	pub := broadcast.NewRedisPublisher(rdb)
 	sub := broadcast.NewRedisSubscriber(rdb)
 
+	dlqQueue := dlq.NewQueue(rdb)
+	dlqWorker := dlq.NewWorker(dlqQueue, repo, pub)
+	go dlqWorker.Run(ctx)
+
 	r := api.NewRouter(api.RouterParams{
 		Keyfunc:       kf,
 		Notifications: repo,
 		Publisher:     pub,
+		DLQ:           dlqQueue,
 		Subscriber:    sub,
 		WebhookSecret: cfg.WebhookSecret,
 		CPFKey:        cfg.CPFKey,

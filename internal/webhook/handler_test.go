@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/api"
@@ -301,6 +302,48 @@ func TestWebhookHandler_CitizenRefNotCPF(t *testing.T) {
 	if len(citizenRef) != sha256.Size {
 		t.Errorf("citizen_ref length = %d, want %d (HMAC-SHA256)", len(citizenRef), sha256.Size)
 	}
+}
+
+func TestWebhookHandler_DBError_EnqueuesDLQ(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := storage.NewNotificationRepo(testutil.ErrQuerier{})
+
+	// Spy DLQ that records the enqueued params.
+	calls := make(chan struct{}, 1)
+	spyDLQ := &spyDeadLetterQueue{fn: func(_ storage.InsertParams) { calls <- struct{}{} }}
+
+	r := api.NewRouter(api.RouterParams{
+		Keyfunc:       testKf,
+		Notifications: repo,
+		Publisher:     webhook.NoOpPublisher{},
+		DLQ:           spyDLQ,
+		WebhookSecret: testSecret,
+		CPFKey:        testCPFKey,
+	})
+
+	body, _ := json.Marshal(validBody())
+	w := post(r, body, sign(body, testSecret))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.Code)
+	}
+
+	select {
+	// o canal tem um item -> Enqueue foi chamado, .
+	case <-calls:
+	case <-time.After(time.Second):
+		t.Error("DLQ.Enqueue was not called after DB insert failure")
+	}
+}
+
+type spyDeadLetterQueue struct {
+	fn func(storage.InsertParams)
+}
+
+func (s *spyDeadLetterQueue) Enqueue(_ context.Context, p storage.InsertParams) error {
+	s.fn(p)
+	return nil
 }
 
 // computeExpectedCitizenRef mirrors the handler's derivation so the test can query by it.

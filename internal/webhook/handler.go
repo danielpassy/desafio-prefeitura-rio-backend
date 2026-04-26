@@ -39,6 +39,11 @@ type NoOpPublisher struct{}
 
 func (NoOpPublisher) Publish(_ context.Context, _ *storage.Notification) error { return nil }
 
+// DeadLetterQueue enqueues payloads that could not be persisted for later retry.
+type DeadLetterQueue interface {
+	Enqueue(ctx context.Context, e storage.InsertParams) error
+}
+
 type payload struct {
 	TicketID       string  `json:"ticket_id"`
 	Type           string  `json:"type"`
@@ -53,14 +58,16 @@ type payload struct {
 type Handler struct {
 	repo          *storage.NotificationRepo
 	pub           Publisher
+	dlq           DeadLetterQueue
 	webhookSecret []byte
 	cpfKey        []byte
 }
 
-func NewHandler(repo *storage.NotificationRepo, pub Publisher, webhookSecret, cpfKey string) *Handler {
+func NewHandler(repo *storage.NotificationRepo, pub Publisher, dlq DeadLetterQueue, webhookSecret, cpfKey string) *Handler {
 	return &Handler{
 		repo:          repo,
 		pub:           pub,
+		dlq:           dlq,
 		webhookSecret: []byte(webhookSecret),
 		cpfKey:        []byte(cpfKey),
 	}
@@ -106,7 +113,7 @@ func (h *Handler) Handle(c *gin.Context) {
 		attribute.String("webhook.new_status", p.NewStatus),
 	)
 
-	n, err := h.repo.Insert(c.Request.Context(), storage.InsertParams{
+	event := storage.InsertParams{
 		TicketID:       p.TicketID,
 		Type:           p.Type,
 		CitizenRef:     citizenRef,
@@ -116,9 +123,14 @@ func (h *Handler) Handle(c *gin.Context) {
 		Description:    p.Description,
 		EventTimestamp: ts,
 		EventHash:      eventHash,
-	})
+	}
+
+	n, err := h.repo.Insert(c.Request.Context(), event)
 	if err != nil {
 		slog.ErrorContext(c.Request.Context(), "webhook insert failed", "error", err)
+		if dlqErr := h.dlq.Enqueue(c.Request.Context(), event); dlqErr != nil {
+			slog.ErrorContext(c.Request.Context(), "webhook dlq enqueue failed", "error", dlqErr)
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}

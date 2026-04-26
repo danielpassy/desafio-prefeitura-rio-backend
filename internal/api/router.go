@@ -15,13 +15,14 @@ type RouterParams struct {
 	Keyfunc       keyfunc.Keyfunc
 	Notifications *storage.NotificationRepo
 	Publisher     webhook.Publisher
+	DLQ           webhook.DeadLetterQueue
 	Subscriber    ws.Subscriber
 	WebhookSecret string
 	CPFKey        string
 }
 
 func NewRouter(p RouterParams) *gin.Engine {
-	wh := webhook.NewHandler(p.Notifications, p.Publisher, p.WebhookSecret, p.CPFKey)
+	wh := webhook.NewHandler(p.Notifications, p.Publisher, p.DLQ, p.WebhookSecret, p.CPFKey)
 	nh := notification.NewHandler(p.Notifications)
 	wsh := ws.NewHandler(p.Subscriber)
 
