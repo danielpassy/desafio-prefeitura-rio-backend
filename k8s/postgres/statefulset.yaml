@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: postgres:18.3-alpine
           ports:
             - containerPort: 5432
           envFrom:
@@ -24,7 +24,7 @@ spec:
                 name: postgres-credentials
           volumeMounts:
             - name: data
-              mountPath: /var/lib/postgresql/data
+              mountPath: /var/lib/postgresql
           livenessProbe:
             exec:
               command: ["pg_isready", "-U", "app", "-d", "notifications"]

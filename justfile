@@ -21,5 +21,8 @@ run:
 test:
     go test ./...
 
+test-compose:
+    docker compose --profile test up --build --abort-on-container-exit --exit-code-from tests tests
+
 build:
     go build ./...

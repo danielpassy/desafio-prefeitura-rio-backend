@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18.3-alpine
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
@@ -8,19 +8,44 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./.data/postgres:/var/lib/postgresql/data
+      - ./.data/postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d notifications"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  postgres-init-test:
+    image: postgres:18.3-alpine
+    depends_on:
+      - postgres
+    environment:
+      PGPASSWORD: app
+    command:
+      - sh
+      - -ec
+      - |
+        until pg_isready -h postgres -U app -d notifications; do sleep 1; done
+        createdb -h postgres -U app notifications_test || true
+    profiles:
+      - test
+
   redis:
-    image: redis:8-alpine
+    image: redis:8.6.2-alpine
     ports:
       - "6379:6379"
     volumes:
       - ./.data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-test:
+    image: redis:8.6.2-alpine
+    volumes:
+      - ./.data/redis-test:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -82,3 +107,25 @@ services:
         condition: service_completed_successfully
     profiles:
       - app
+
+  tests:
+    build:
+      context: .
+      target: test
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/notifications_test
+      REDIS_ADDR: redis-test:6379
+      WEBHOOK_SECRET: test-webhook-secret
+      CPF_KEY: test-cpf-key
+      JWT_JWKS_URL: http://mock-idp:8080/default/.well-known/jwks.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-init-test:
+        condition: service_completed_successfully
+      redis-test:
+        condition: service_healthy
+      mock-idp-probe:
+        condition: service_completed_successfully
+    profiles:
+      - test

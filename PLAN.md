@@ -16,14 +16,15 @@ Após cada commit, verificar `read-detalhado-e-duvidas.md` para confirmar cobert
 - [ ] 9 — README final — como rodar, decisões, o que faria diferente
 
 
-- [ ] 10 - Tracing com OpenTelemetry
+- [x] 10 - Tracing com OpenTelemetry
 - [ ] 11 - Load test with k6
-- [ ] 12 - Dead letter queue para webhooks que falharam na persistência
-- [ ] 13 - Circuit breaker para dependências externas
-- [ ] 14 - Manifests Kubernetes
+- [x] 12 - Dead letter queue para webhooks que falharam na persistência
+- [x] 13 - Circuit breaker para dependências externas
+- [x] 14 - Manifests Kubernetes
 
 - [ ] 15 - Melhorias 1: auth_test.go cria um teste, monta router, será que isso pode ser extraído e compartilhado entre módulos?
 - [ ] 16 - mudar para um validador mais robusto a la pydantic/zod
 - [ ] 17 - testar que consigo rodar tudo dentro do docker
 - [ ] 18 - mudar pra property test.
 - [ ] 19 - limites/CORS
+- [ ] 20 - mudar docker pra sem dist para reduzir uso de recursos e melhor segurança. 
