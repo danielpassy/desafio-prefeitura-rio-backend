@@ -12,7 +12,8 @@ Instale o [Docker](https://docs.docker.com/get-started/get-docker/) e o [just](h
 cp .env.example .env
 just up       # sobe Postgres, Redis e mock IdP
 just migrate  # aplica as migrations
-just run      # inicia a aplicação fora do Compose
+just run      # inicia aplicação não containerizada,
+just run-app  # inicia aplicação no docker compose.
 just test-compose  # roda go test dentro do docker compose
 ```
 
