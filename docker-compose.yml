@@ -129,3 +129,16 @@ services:
         condition: service_completed_successfully
     profiles:
       - test
+
+  k6:
+    image: grafana/k6:1.0.0
+    volumes:
+      - ./k6:/scripts
+    environment:
+      BASE_URL: http://app:8080
+      IDP_URL: http://mock-idp:8080
+    env_file:
+      - .env
+    command: run /scripts/${K6_SCRIPT:-smoke.js}
+    profiles:
+      - k6

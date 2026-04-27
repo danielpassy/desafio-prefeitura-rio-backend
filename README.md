@@ -11,6 +11,7 @@ cp .env.example .env
 just up       # sobe Postgres, Redis e mock IdP
 just migrate  # aplica as migrations
 just run      # inicia a aplicação
+just test-compose  # roda go test dentro do docker compose
 ```
 
 ## Kubernetes

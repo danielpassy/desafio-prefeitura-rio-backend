@@ -24,5 +24,11 @@ test:
 test-compose:
     docker compose --profile test up --build --abort-on-container-exit --exit-code-from tests tests
 
+smoke:
+    docker compose --profile k6 run --rm -e K6_SCRIPT=smoke.js k6
+
+load-test:
+    docker compose --profile k6 run --rm -e K6_SCRIPT=load.js k6
+
 build:
     go build ./...
