@@ -27,7 +27,7 @@ func NewRouter(p RouterParams) *gin.Engine {
 	wsh := ws.NewHandler(p.Subscriber)
 
 	r := gin.New()
-	r.Use(otelgin.Middleware("notifications-api"), gin.Recovery())
+	r.Use(otelgin.Middleware("notifications-api"), gin.Logger(), gin.Recovery())
 	r.POST("/webhook", wh.Handle)
 
 	api := r.Group("/", auth.AuthMiddleware(p.Keyfunc, []byte(p.CPFKey)))
