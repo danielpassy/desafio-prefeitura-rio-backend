@@ -96,6 +96,12 @@ O JWT do cidadão é assinado com **RS256** (criptografia assimétrica) e a chav
 - JWKS é o mecanismo padrão OIDC para distribuição e rotação de chave pública — qualquer IdP sério expõe `/.well-known/jwks.json`.
 - Para desenvolvimento, subimos um **mock de IdP no compose** que expõe um JWKS de teste e emite tokens assinados; a aplicação não distingue mock de produção.
 
+### Mock IdP customizado em vez de mock-oauth2-server
+
+O mock IdP em `mock-idp/` é um serviço Go enxuto (~90 linhas) que gera um par RSA na inicialização e expõe `/default/.well-known/openid-configuration`, `/default/jwks` e `/default/token`. O endpoint de token lê o `client_id` do form e devolve um JWT RS256 com `preferred_username = sub = client_id`.
+
+**Por que não usamos `ghcr.io/navikt/mock-oauth2-server`:** o `JSON_CONFIG` dele aceita regras `requestMappings` que casam regex sobre parâmetros do request, mas o bloco `claims` retornado é **estático** — não há templating do tipo `${client_id}`. Para fazer o `preferred_username` refletir o CPF que veio no `client_id`, seria preciso uma entrada por CPF no config (20 entradas para cobrir o load test, com `NUM_CITIZENS=20`), e qualquer mudança nesse número exigiria regenerar o arquivo. Um IdP customizado resolve com mapeamento dinâmico e remove o limite arbitrário de CPFs nos testes.
+
 ### Privacidade do CPF: citizen_ref
 
 O enunciado exige que o CPF não apareça no banco. A solução adotada é substituí-lo por `citizen_ref = HMAC-SHA256(cpf, CPF_KEY)`, onde `CPF_KEY` é um secret distinto do `WEBHOOK_SECRET` e da configuração JWT.

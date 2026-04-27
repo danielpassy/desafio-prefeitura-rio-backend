@@ -12,7 +12,7 @@ func validEnv(t *testing.T) {
 	t.Setenv("REDIS_ADDR", "localhost:6379")
 	t.Setenv("WEBHOOK_SECRET", "webhook-secret")
 	t.Setenv("CPF_KEY", "cpf-key")
-	t.Setenv("JWT_JWKS_URL", "http://localhost:8080/default/.well-known/jwks.json")
+	t.Setenv("JWT_JWKS_URL", "http://localhost:15423/default/jwks")
 }
 
 func TestLoad_Valid(t *testing.T) {

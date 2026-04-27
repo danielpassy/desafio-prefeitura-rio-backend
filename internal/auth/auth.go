@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -35,6 +36,7 @@ func AuthMiddleware(kf keyfunc.Keyfunc, cpfKey []byte) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, err := parseAndValidateBearerToken(c.GetHeader("Authorization"), kf)
 		if err != nil {
+			slog.ErrorContext(c.Request.Context(), "auth failed", "error", err)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
