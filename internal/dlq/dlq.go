@@ -3,6 +3,7 @@ package dlq
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,6 +23,12 @@ type Entry struct {
 	Attempts int                  `json:"attempts"`
 }
 
+// Queue armazena retries num ZSET com score = ready_at_unix_ms.
+// Entries com score <= now estão elegíveis pra processamento; o resto
+// fica "dormindo" no Redis sem bloquear o worker.
+// Isso permite um backoff que não bloqueia e implementa um circuit breaker que lida tanto
+// com falhas transitórias (ex: banco temporariamente indisponível) quanto com
+// dados problemáticos (ex: payload que não passa na validação do banco).
 type Queue struct {
 	rdb *redis.Client
 }
@@ -30,36 +37,55 @@ func NewQueue(rdb *redis.Client) *Queue {
 	return &Queue{rdb: rdb}
 }
 
+// Enqueue insere um evento novo, disponível imediatamente.
 func (q *Queue) Enqueue(ctx context.Context, e storage.InsertParams) error {
-	return q.enqueueEntry(ctx, Entry{Event: e, FailedAt: time.Now(), Attempts: 1})
+	return q.enqueueAt(ctx, Entry{Event: e, FailedAt: time.Now(), Attempts: 1}, time.Now())
 }
 
-func (q *Queue) enqueueEntry(ctx context.Context, e Entry) error {
+// enqueueAt agenda uma entry pra ficar disponível em readyAt.
+func (q *Queue) enqueueAt(ctx context.Context, e Entry, readyAt time.Time) error {
 	data, err := json.Marshal(e)
 	if err != nil {
 		return fmt.Errorf("dlq marshal: %w", err)
 	}
-	return q.rdb.LPush(ctx, retryKey, data).Err()
+	return q.rdb.ZAdd(ctx, retryKey, redis.Z{
+		Score:  float64(readyAt.UnixMilli()),
+		Member: data,
+	}).Err()
 }
 
-// dequeue blocks up to timeout waiting for a retry entry. Returns nil with no error on timeout.
-func (q *Queue) dequeue(ctx context.Context, timeout time.Duration) (*Entry, error) {
-	result, err := q.rdb.BRPop(ctx, timeout, retryKey).Result()
-	if err == redis.Nil {
+// popReadyScript remove atomicamente a entry mais antiga elegível (score <= ARGV[1]).
+// Retorna o JSON cru ou false se não há nada pronto.
+var popReadyScript = redis.NewScript(`
+local entries = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, 1)
+if #entries == 0 then return false end
+redis.call('ZREM', KEYS[1], entries[1])
+return entries[1]
+`)
+
+// dequeueReady remove e retorna uma entry pronta, ou nil se nenhuma está elegível agora.
+func (q *Queue) dequeueReady(ctx context.Context) (*Entry, error) {
+	now := time.Now().UnixMilli()
+	res, err := popReadyScript.Run(ctx, q.rdb, []string{retryKey}, now).Result()
+	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("dlq brpop: %w", err)
+		return nil, fmt.Errorf("dlq pop-ready: %w", err)
+	}
+	s, ok := res.(string)
+	if !ok || s == "" {
+		return nil, nil
 	}
 	var e Entry
-	if err := json.Unmarshal([]byte(result[1]), &e); err != nil {
+	if err := json.Unmarshal([]byte(s), &e); err != nil {
 		return nil, fmt.Errorf("dlq unmarshal: %w", err)
 	}
 	return &e, nil
 }
 
-// MoveToDead pushes an entry to the terminal dead queue. Entries here are never
-// processed automatically and require manual inspection / replay.
+// MoveToDead empurra a entry pra fila terminal. Não há processamento automático
+// a partir daqui — requer inspeção/replay manual.
 func (q *Queue) MoveToDead(ctx context.Context, e Entry) error {
 	data, err := json.Marshal(e)
 	if err != nil {
@@ -69,17 +95,4 @@ func (q *Queue) MoveToDead(ctx context.Context, e Entry) error {
 		return fmt.Errorf("dlq lpush dead: %w", err)
 	}
 	return nil
-}
-
-// Sizes returns the current length of the retry and dead queues.
-func (q *Queue) Sizes(ctx context.Context) (retry, dead int64, err error) {
-	retry, err = q.rdb.LLen(ctx, retryKey).Result()
-	if err != nil {
-		return 0, 0, fmt.Errorf("dlq llen retry: %w", err)
-	}
-	dead, err = q.rdb.LLen(ctx, deadKey).Result()
-	if err != nil {
-		return 0, 0, fmt.Errorf("dlq llen dead: %w", err)
-	}
-	return retry, dead, nil
 }

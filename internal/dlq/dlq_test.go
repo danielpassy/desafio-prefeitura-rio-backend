@@ -26,7 +26,9 @@ func TestMain(m *testing.M) {
 	}
 	testDB = pool
 
-	queueTimeout = 100 * time.Millisecond
+	pollInterval = 20 * time.Millisecond
+	backoffInitial = 50 * time.Millisecond
+	backoffMax = 200 * time.Millisecond
 
 	code := m.Run()
 	pool.Close()
@@ -130,9 +132,9 @@ func TestQueue_EnqueueDequeue(t *testing.T) {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
-	entry, err := q.dequeue(context.Background(), time.Second)
+	entry, err := q.dequeueReady(context.Background())
 	if err != nil {
-		t.Fatalf("dequeue: %v", err)
+		t.Fatalf("dequeueReady: %v", err)
 	}
 	if entry == nil {
 		t.Fatal("expected entry, got nil")
@@ -148,9 +150,9 @@ func TestQueue_EnqueueDequeue(t *testing.T) {
 func TestQueue_DequeueEmpty(t *testing.T) {
 	q, _ := newTestQueue(t)
 
-	entry, err := q.dequeue(context.Background(), 100*time.Millisecond)
+	entry, err := q.dequeueReady(context.Background())
 	if err != nil {
-		t.Fatalf("dequeue: %v", err)
+		t.Fatalf("dequeueReady: %v", err)
 	}
 	if entry != nil {
 		t.Errorf("expected nil on empty queue, got %+v", entry)
@@ -287,8 +289,8 @@ func TestWorker_MaxAttemptsMovesToDead(t *testing.T) {
 		FailedAt: time.Now(),
 		Attempts: MaxAttempts, // already at the limit → must move to dead, not re-enqueue
 	}
-	if err := q.enqueueEntry(context.Background(), entry); err != nil {
-		t.Fatalf("enqueueEntry: %v", err)
+	if err := q.enqueueAt(context.Background(), entry, time.Now()); err != nil {
+		t.Fatalf("enqueueAt: %v", err)
 	}
 
 	cancel, done := runWorker(context.Background(), w)
@@ -304,9 +306,9 @@ func TestWorker_MaxAttemptsMovesToDead(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	retry, err := rdb.LLen(context.Background(), retryKey).Result()
+	retry, err := rdb.ZCard(context.Background(), retryKey).Result()
 	if err != nil {
-		t.Fatalf("LLEN retry: %v", err)
+		t.Fatalf("ZCARD retry: %v", err)
 	}
 	if retry != 0 {
 		t.Errorf("retry queue length = %d after move-to-dead, want 0", retry)
