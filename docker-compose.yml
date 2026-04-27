@@ -33,19 +33,29 @@ services:
       - "15423:8080"
     environment:
       SERVER_PORT: "8080"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/default/.well-known/openid-configuration || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+
+  # Existe apenas para o app poder depender de service_completed_successfully.
+  # Necessário porque mock-idp é distroless e não suporta healthcheck direto.
+  mock-idp-probe:
+    image: curlimages/curl:8.19.0
+    depends_on:
+      - mock-idp
+    command:
+      - "--retry"
+      - "20"
+      - "--retry-delay"
+      - "2"
+      - "--retry-all-errors"
+      - "-sfo"
+      - "/dev/null"
+      - "http://mock-idp:8080/default/.well-known/openid-configuration"
+    restart: "no"
 
   jaeger:
-    image: jaegertracing/all-in-one:1.62
+    image: jaegertracing/jaeger:2.17.0
     ports:
       - "16686:16686"  # UI
       - "4317:4317"    # OTLP gRPC
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:16686/ || exit 1"]
       interval: 5s
@@ -68,7 +78,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mock-idp:
-        condition: service_healthy
+      mock-idp-probe:
+        condition: service_completed_successfully
     profiles:
       - app
