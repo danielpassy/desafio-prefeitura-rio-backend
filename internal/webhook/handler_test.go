@@ -16,11 +16,13 @@ import (
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/api"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/circuitbreaker"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/testutil"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/webhook"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sony/gobreaker"
 )
 
 const (
@@ -351,4 +353,32 @@ func computeExpectedCitizenRef(cpf string) []byte {
 	mac := hmac.New(sha256.New, []byte(testCPFKey))
 	mac.Write([]byte(cpf))
 	return mac.Sum(nil)
+}
+
+func TestWebhookHandler_PostgresCBOpen_Returns503(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
+		ReadyToTrip: func(counts gobreaker.Counts) bool { return counts.ConsecutiveFailures >= 1 },
+	})
+	wrappedQ := circuitbreaker.WrapQuerier(testutil.ErrQuerier{}, cb)
+
+	// One failing call is enough to open the circuit.
+	wrappedQ.Exec(context.Background(), "SELECT 1")
+
+	repo := storage.NewNotificationRepo(wrappedQ)
+	r := api.NewRouter(api.RouterParams{
+		Keyfunc:       testKf,
+		Notifications: repo,
+		Publisher:     webhook.NoOpPublisher{},
+		WebhookSecret: testSecret,
+		CPFKey:        testCPFKey,
+	})
+
+	body, _ := json.Marshal(validBody())
+	w := post(r, body, sign(body, testSecret))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.Code)
+	}
 }

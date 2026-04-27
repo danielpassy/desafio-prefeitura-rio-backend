@@ -13,6 +13,7 @@ import (
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/api"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/auth"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/broadcast"
+	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/circuitbreaker"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/config"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/dlq"
 	"github.com/danielpassy/desafio-prefeitura-rio-backend/internal/storage"
@@ -54,6 +55,7 @@ func main() {
 		slog.Error("redis otel hook failed", "error", err)
 		os.Exit(1)
 	}
+	rdb.AddHook(circuitbreaker.NewRedisHook(circuitbreaker.NewRedisBreaker()))
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		slog.Error("redis connection failed", "error", err)
 		os.Exit(1)
@@ -65,7 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	repo := storage.NewNotificationRepo(pool)
+	repo := storage.NewNotificationRepo(circuitbreaker.WrapQuerier(pool, circuitbreaker.NewPostgresBreaker()))
 	pub := broadcast.NewRedisPublisher(rdb)
 	sub := broadcast.NewRedisSubscriber(rdb)
 
