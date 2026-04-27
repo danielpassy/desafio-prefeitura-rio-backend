@@ -111,8 +111,8 @@ func TestWebhookHandler_ValidRequest(t *testing.T) {
 	body, _ := json.Marshal(validBody())
 	w := post(r, body, sign(body, testSecret))
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body = %s", w.Code, w.Body.String())
 	}
 
 	items, total, err := repo.List(context.Background(), storage.ListParams{
@@ -255,8 +255,8 @@ func TestWebhookHandler_Idempotency(t *testing.T) {
 
 	// first request — inserts
 	w1 := post(r, body, sign(body, testSecret))
-	if w1.Code != http.StatusOK {
-		t.Fatalf("first request status = %d, want 200", w1.Code)
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("first request status = %d, want 201", w1.Code)
 	}
 
 	// second identical request — must be silently accepted (no duplicate record)
@@ -283,7 +283,7 @@ func TestWebhookHandler_CitizenRefNotCPF(t *testing.T) {
 
 	body, _ := json.Marshal(validBody())
 	w := post(r, body, sign(body, testSecret))
-	if w.Code != http.StatusOK {
+	if w.Code != http.StatusCreated {
 		t.Fatalf("unexpected status %d", w.Code)
 	}
 

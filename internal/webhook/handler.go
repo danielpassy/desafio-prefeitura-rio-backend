@@ -147,7 +147,7 @@ func (h *Handler) Handle(c *gin.Context) {
 		slog.ErrorContext(c.Request.Context(), "webhook broadcast failed", "error", err)
 	}
 
-	c.Status(http.StatusOK)
+	c.Status(http.StatusCreated)
 }
 
 func (h *Handler) validSignature(header string, body []byte) bool {

@@ -51,7 +51,7 @@ export default function () {
 
   const req = signedWebhookRequest(cpf, 'SMOKE-001');
   const wRes = http.post(`${BASE_URL}/webhook`, req.body, { headers: req.headers });
-  check(wRes, { 'webhook: 200': (r) => r.status === 200 });
+  check(wRes, { 'webhook: 201': (r) => r.status === 201 });
 
   const nRes = http.get(`${BASE_URL}/notifications`, { headers: authHeaders });
   check(nRes, {
