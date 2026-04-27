@@ -12,9 +12,11 @@ Instale o [Docker](https://docs.docker.com/get-started/get-docker/) e o [just](h
 cp .env.example .env
 just up       # sobe Postgres, Redis e mock IdP
 just migrate  # aplica as migrations
-just run      # inicia a aplicação
+just run      # inicia a aplicação fora do Compose
 just test-compose  # roda go test dentro do docker compose
 ```
+
+`just run` lê as variáveis do ambiente e roda o binário direto na máquina. Se preferir rodar dentro do Compose, use `just up-app` para subir apenas o serviço da aplicação depois de `just up` e `just migrate`.
 
 ## Índice de Decisões
 
@@ -53,7 +55,10 @@ Os manifests estão em `k8s/`. **Secrets nunca são commitados** — devem ser c
 # 1. namespace
 kubectl apply -f k8s/namespace.yaml
 
-# 2. secrets (ajuste os valores antes de executar)
+# 2. config da aplicação
+kubectl -n notifications apply -f k8s/app/configmap.yaml
+
+# 3. secrets (ajuste os valores antes de executar)
 kubectl -n notifications create secret generic postgres-credentials \
   --from-literal=POSTGRES_USER=app \
   --from-literal=POSTGRES_PASSWORD=<senha> \
@@ -64,7 +69,7 @@ kubectl -n notifications create secret generic app-secrets \
   --from-literal=WEBHOOK_SECRET=<secret> \
   --from-literal=CPF_KEY=<chave>
 
-# 3. demais recursos
+# 4. demais recursos
 kubectl apply -f k8s/redis/
 kubectl apply -f k8s/postgres/
 kubectl apply -f k8s/app/
@@ -74,7 +79,9 @@ Antes do deploy da aplicação, edite `k8s/app/configmap.yaml` com a URL real do
 
 As migrations devem ser rodadas manualmente (`just migrate`) no ambiente de destino antes de subir o Deployment.
 
-> **Nota:** o StatefulSet de Postgres aqui é apenas para demonstração. Em produção, use managed DB.
+O `ConfigMap` da aplicação carrega `REDIS_ADDR`, `JWT_JWKS_URL` e `OTEL_EXPORTER_OTLP_ENDPOINT`. Os segredos vão em `app-secrets` e incluem `DATABASE_URL`, `WEBHOOK_SECRET` e `CPF_KEY`.
+
+> **Nota:** o StatefulSet de Postgres aqui é apenas para demonstração. Em produção, sugiro usar um db managed (aurora, spanner, etc).
 
 
 ## Decisões Detalhadas
