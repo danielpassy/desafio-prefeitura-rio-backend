@@ -36,8 +36,8 @@ func TestMain(m *testing.M) {
 func newTestQueue(t *testing.T) (*Queue, *redis.Client) {
 	t.Helper()
 	rdb := testutil.NewTestRedis(t)
-	rdb.Del(context.Background(), queueKey)
-	t.Cleanup(func() { rdb.Del(context.Background(), queueKey) })
+	rdb.Del(context.Background(), retryKey, deadKey)
+	t.Cleanup(func() { rdb.Del(context.Background(), retryKey, deadKey) })
 	return NewQueue(rdb), rdb
 }
 
@@ -276,7 +276,7 @@ func TestWorker_RetryAfterFailure(t *testing.T) {
 	}
 }
 
-func TestWorker_MaxAttemptsDiscard(t *testing.T) {
+func TestWorker_MaxAttemptsMovesToDead(t *testing.T) {
 	q, rdb := newTestQueue(t)
 	repo := storage.NewNotificationRepo(testutil.ErrQuerier{})
 	spy := newSpyPublisher()
@@ -285,7 +285,7 @@ func TestWorker_MaxAttemptsDiscard(t *testing.T) {
 	entry := Entry{
 		Event:    makeEvent("WORKER-MAXATTEMPTS", "worker-maxattempts-hash"),
 		FailedAt: time.Now(),
-		Attempts: MaxAttempts, // already at the limit → must discard, not re-enqueue
+		Attempts: MaxAttempts, // already at the limit → must move to dead, not re-enqueue
 	}
 	if err := q.enqueueEntry(context.Background(), entry); err != nil {
 		t.Fatalf("enqueueEntry: %v", err)
@@ -294,22 +294,29 @@ func TestWorker_MaxAttemptsDiscard(t *testing.T) {
 	cancel, done := runWorker(context.Background(), w)
 	defer func() { cancel(); <-done }()
 
-	// Poll until the entry is dequeued (discarded), then assert.
+	// Poll until the entry is moved to the dead queue.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		n, _ := rdb.LLen(context.Background(), queueKey).Result()
-		if n == 0 {
+		dead, _ := rdb.LLen(context.Background(), deadKey).Result()
+		if dead == 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	n, err := rdb.LLen(context.Background(), queueKey).Result()
+	retry, err := rdb.LLen(context.Background(), retryKey).Result()
 	if err != nil {
-		t.Fatalf("LLEN: %v", err)
+		t.Fatalf("LLEN retry: %v", err)
 	}
-	if n != 0 {
-		t.Errorf("queue length = %d after discard, want 0", n)
+	if retry != 0 {
+		t.Errorf("retry queue length = %d after move-to-dead, want 0", retry)
+	}
+	dead, err := rdb.LLen(context.Background(), deadKey).Result()
+	if err != nil {
+		t.Fatalf("LLEN dead: %v", err)
+	}
+	if dead != 1 {
+		t.Errorf("dead queue length = %d, want 1", dead)
 	}
 	select {
 	case got := <-spy.ch:

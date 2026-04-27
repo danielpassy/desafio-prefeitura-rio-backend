@@ -10,6 +10,11 @@ import (
 
 var queueTimeout = 5 * time.Second
 
+const (
+	backoffInitial = 2 * time.Second
+	backoffMax     = 30 * time.Second
+)
+
 type Publisher interface {
 	Publish(ctx context.Context, n *storage.Notification) error
 }
@@ -25,6 +30,7 @@ func NewWorker(queue *Queue, repo *storage.NotificationRepo, pub Publisher) *Wor
 }
 
 func (w *Worker) Run(ctx context.Context) {
+	backoff := backoffInitial
 	for {
 		select {
 		case <-ctx.Done():
@@ -37,9 +43,18 @@ func (w *Worker) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			slog.ErrorContext(ctx, "dlq dequeue error", "error", err)
+			slog.ErrorContext(ctx, "dlq dequeue error", "error", err, "backoff", backoff.String())
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			backoff = min(backoff*2, backoffMax)
 			continue
 		}
+		// reset backoff on any healthy dequeue (incl. timeout returning nil)
+		backoff = backoffInitial
+
 		if entry == nil {
 			continue
 		}
@@ -52,10 +67,18 @@ func (w *Worker) Run(ctx context.Context) {
 				if enqErr := w.queue.enqueueEntry(ctx, *entry); enqErr != nil {
 					slog.ErrorContext(ctx, "dlq re-enqueue failed", "error", enqErr)
 				}
+				continue
+			}
+			if mvErr := w.queue.MoveToDead(ctx, *entry); mvErr != nil {
+				slog.ErrorContext(ctx, "dlq move-to-dead failed",
+					"error", mvErr,
+					"ticket_id", entry.Event.TicketID,
+				)
 			} else {
-				slog.ErrorContext(ctx, "dlq max attempts reached, discarding",
+				slog.WarnContext(ctx, "dlq entry moved to dead queue",
 					"ticket_id", entry.Event.TicketID,
 					"failed_at", entry.FailedAt,
+					"attempts", entry.Attempts,
 				)
 			}
 			continue
@@ -71,3 +94,4 @@ func (w *Worker) Run(ctx context.Context) {
 		}
 	}
 }
+

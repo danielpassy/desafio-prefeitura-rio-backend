@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	queueKey    = "dlq:webhooks"
+	retryKey    = "dlq:webhooks:retry"
+	deadKey     = "dlq:webhooks:dead"
 	MaxAttempts = 5
 )
 
@@ -38,12 +39,12 @@ func (q *Queue) enqueueEntry(ctx context.Context, e Entry) error {
 	if err != nil {
 		return fmt.Errorf("dlq marshal: %w", err)
 	}
-	return q.rdb.LPush(ctx, queueKey, data).Err()
+	return q.rdb.LPush(ctx, retryKey, data).Err()
 }
 
-// dequeue blocks up to timeout waiting for an entry. Returns nil with no error on timeout.
+// dequeue blocks up to timeout waiting for a retry entry. Returns nil with no error on timeout.
 func (q *Queue) dequeue(ctx context.Context, timeout time.Duration) (*Entry, error) {
-	result, err := q.rdb.BRPop(ctx, timeout, queueKey).Result()
+	result, err := q.rdb.BRPop(ctx, timeout, retryKey).Result()
 	if err == redis.Nil {
 		return nil, nil
 	}
@@ -55,4 +56,30 @@ func (q *Queue) dequeue(ctx context.Context, timeout time.Duration) (*Entry, err
 		return nil, fmt.Errorf("dlq unmarshal: %w", err)
 	}
 	return &e, nil
+}
+
+// MoveToDead pushes an entry to the terminal dead queue. Entries here are never
+// processed automatically and require manual inspection / replay.
+func (q *Queue) MoveToDead(ctx context.Context, e Entry) error {
+	data, err := json.Marshal(e)
+	if err != nil {
+		return fmt.Errorf("dlq marshal: %w", err)
+	}
+	if err := q.rdb.LPush(ctx, deadKey, data).Err(); err != nil {
+		return fmt.Errorf("dlq lpush dead: %w", err)
+	}
+	return nil
+}
+
+// Sizes returns the current length of the retry and dead queues.
+func (q *Queue) Sizes(ctx context.Context) (retry, dead int64, err error) {
+	retry, err = q.rdb.LLen(ctx, retryKey).Result()
+	if err != nil {
+		return 0, 0, fmt.Errorf("dlq llen retry: %w", err)
+	}
+	dead, err = q.rdb.LLen(ctx, deadKey).Result()
+	if err != nil {
+		return 0, 0, fmt.Errorf("dlq llen dead: %w", err)
+	}
+	return retry, dead, nil
 }
