@@ -23,12 +23,12 @@ type Entry struct {
 	Attempts int                  `json:"attempts"`
 }
 
-// Queue armazena retries num ZSET com score = ready_at_unix_ms.
-// Entries com score <= now estão elegíveis pra processamento; o resto
-// fica "dormindo" no Redis sem bloquear o worker.
-// Isso permite um backoff que não bloqueia e implementa um circuit breaker que lida tanto
-// com falhas transitórias (ex: banco temporariamente indisponível) quanto com
-// dados problemáticos (ex: payload que não passa na validação do banco).
+// Queue stores retries in a ZSET with score = ready_at_unix_ms.
+// Entries with score <= now are eligible for processing; the rest
+// sleep in Redis without blocking the worker.
+// This allows non-blocking backoff and acts as a circuit breaker that handles both
+// transient failures (e.g. temporarily unavailable database) and
+// bad data (e.g. payload that fails database validation).
 type Queue struct {
 	rdb *redis.Client
 }
@@ -37,12 +37,12 @@ func NewQueue(rdb *redis.Client) *Queue {
 	return &Queue{rdb: rdb}
 }
 
-// Enqueue insere um evento novo, disponível imediatamente.
+// Enqueue inserts a new event, available immediately.
 func (q *Queue) Enqueue(ctx context.Context, e storage.InsertParams) error {
 	return q.enqueueAt(ctx, Entry{Event: e, FailedAt: time.Now(), Attempts: 1}, time.Now())
 }
 
-// enqueueAt agenda uma entry pra ficar disponível em readyAt.
+// enqueueAt schedules an entry to become available at readyAt.
 func (q *Queue) enqueueAt(ctx context.Context, e Entry, readyAt time.Time) error {
 	data, err := json.Marshal(e)
 	if err != nil {
@@ -54,8 +54,8 @@ func (q *Queue) enqueueAt(ctx context.Context, e Entry, readyAt time.Time) error
 	}).Err()
 }
 
-// popReadyScript remove atomicamente a entry mais antiga elegível (score <= ARGV[1]).
-// Retorna o JSON cru ou false se não há nada pronto.
+// popReadyScript atomically removes the oldest eligible entry (score <= ARGV[1]).
+// Returns the raw JSON or false if nothing is ready.
 var popReadyScript = redis.NewScript(`
 local entries = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, 1)
 if #entries == 0 then return false end
@@ -63,13 +63,13 @@ redis.call('ZREM', KEYS[1], entries[1])
 return entries[1]
 `)
 
-// dequeueReady remove e retorna uma entry pronta, ou nil se nenhuma está elegível agora.
+// dequeueReady removes and returns a ready entry, or nil if none is eligible right now.
 func (q *Queue) dequeueReady(ctx context.Context) (*Entry, error) {
 	now := time.Now().UnixMilli()
 	res, err := popReadyScript.Run(ctx, q.rdb, []string{retryKey}, now).Result()
-	// O hook do circuit breaker (internal/circuitbreaker/redis.go) trata redis.Nil
-	// apenas pra não contabilizar como falha no breaker — o erro continua sendo
-	// propagado pelo cmd. Por isso o check aqui é necessário, não redundante.
+	// The circuit breaker hook (internal/circuitbreaker/redis.go) handles redis.Nil
+	// only to avoid counting it as a breaker failure — the error is still propagated
+	// by cmd. The check here is therefore necessary, not redundant.
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
@@ -83,8 +83,8 @@ func (q *Queue) dequeueReady(ctx context.Context) (*Entry, error) {
 	return &e, nil
 }
 
-// MoveToDead empurra a entry pra fila terminal. Não há processamento automático
-// a partir daqui — requer inspeção/replay manual.
+// MoveToDead pushes the entry to the terminal queue. There is no automatic processing
+// from here — requires manual inspection/replay.
 func (q *Queue) MoveToDead(ctx context.Context, e Entry) error {
 	data, err := json.Marshal(e)
 	if err != nil {

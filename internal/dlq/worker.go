@@ -28,9 +28,9 @@ func NewWorker(queue *Queue, repo *storage.NotificationRepo, pub Publisher) *Wor
 	return &Worker{queue: queue, repo: repo, pub: pub}
 }
 
-// Run processa a fila de retry sem bloquear em entradas que ainda estão
-// em backoff: elas ficam no ZSET com score futuro e são puladas pelo
-// dequeueReady, deixando o worker livre pra atender as que já estão prontas.
+// Run processes the retry queue without blocking on entries still in backoff:
+// they sit in the ZSET with a future score and are skipped by dequeueReady,
+// leaving the worker free to handle entries that are already ready.
 func (w *Worker) Run(ctx context.Context) {
 	for {
 		select {
@@ -64,7 +64,7 @@ func (w *Worker) Run(ctx context.Context) {
 func (w *Worker) process(ctx context.Context, entry *Entry) {
 	n, err := w.repo.Insert(ctx, entry.Event)
 	if err != nil {
-		// ou banco fora, ou dado ruim, provavelmente banco, dado que nós inserimos os dados
+		// either the database is down or the data is bad — most likely the database, since we inserted the data
 		slog.ErrorContext(ctx, "dlq insert failed", "error", err, "attempts", entry.Attempts)
 		if entry.Attempts < MaxAttempts {
 			entry.Attempts++

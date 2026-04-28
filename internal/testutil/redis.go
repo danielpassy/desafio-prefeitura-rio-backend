@@ -15,8 +15,8 @@ func NewTestRedis(t *testing.T) *redis.Client {
 	if addr == "" {
 		addr = "localhost:6379"
 	}
-	// DB 15 isola os testes do app em execução: sem isso, testes e app
-	// disputam as mesmas chaves no Redis e contaminam o estado um do outro.
+	// DB 15 isolates tests from the running app: without this, tests and app
+	// compete for the same Redis keys and contaminate each other's state.
 	rdb := redis.NewClient(&redis.Options{Addr: addr, DB: 15})
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		t.Skipf("redis unavailable at %s: %v", addr, err)

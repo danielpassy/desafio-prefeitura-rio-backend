@@ -1,10 +1,10 @@
-// Mock IdP de desenvolvimento — emite JWTs RS256 com preferred_username = client_id.
+// Development mock IdP — issues RS256 JWTs with preferred_username = client_id.
 //
-// Substitui o ghcr.io/navikt/mock-oauth2-server porque o JSON_CONFIG dele tem
-// claims estáticos (sem templating ${client_id}), o que exigiria uma entrada
-// por CPF no config. Aqui o claim é dinâmico, sem limite de CPFs.
+// Replaces ghcr.io/navikt/mock-oauth2-server because its JSON_CONFIG has
+// static claims (no ${client_id} templating), which would require one entry
+// per CPF in the config. Here the claim is dynamic, with no CPF limit.
 //
-// NÃO USAR EM PRODUÇÃO: não valida client_secret nem rotaciona chave.
+// DO NOT USE IN PRODUCTION: does not validate client_secret or rotate the key.
 package main
 
 import (
