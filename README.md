@@ -33,18 +33,19 @@ just test-compose  # roda go test dentro do docker compose
 
 1. [Repo AI friendly](#1-repo-ai-friendly): Tornar o repositório mais fácil de usar com IA, adicionando docs de padrões de projeto, `agents.md`, `skills`, `CLAUDE.md` e guias parecidos.
 2. [Rate limit e cap de conexões](#2-rate-limit-e-cap-de-conexões): Proteção contra abusos no webhook e WebSocket via API Gateway.
-3. [Replay da Dead Queue](#3-replay-da-dead-queue): Endpoint ou CLI para re-injetar manualmente mensagens que falharam definitivamente.
-4. [Métricas Prometheus](#4-métricas-prometheus): Monitoramento contínuo de webhooks, latência, profundidade da DLQ e WebSockets.
-5. [Fault injection nos testes](#5-fault-injection-nos-testes): Simulação de erros no Redis/Postgres para cobrir fluxos de falha reais.
-6. [Backpressure no broadcaster](#6-backpressure-no-broadcaster): Drop explícito de mensagens para clientes WS lentos, evitando gargalos globais.
-7. [Rotação de CPF_KEY](#7-rotação-de-cpf_key): Estratégia de versionamento para permitir a troca segura do segredo de hash.
-8. [Mascaramento de dados](#8-mascaramento-de-dados): Ocultação automática de informações sensíveis em logs e stack traces.
-9. [Expansão de testes e DLQ](#9-expansão-de-testes-e-dlq): Cobertura explícita dos fluxos de retry/dead em Redis e revisão do desenho da fila.
-10. [Extrair fixtures de autenticação](#10-extrair-fixtures-de-autenticação): Extrair o client/fixture de autenticação compartilhado entre módulos de teste.
-11. [Validador mais robusto](#11-validador-mais-robusto): Trocar validações manuais por uma lib Go como `go-playground/validator/v10`.
-12. [Property tests](#12-property-tests): Validar invariantes com geração de casos em vez de depender só de exemplos fixos.
-13. [Limites e CORS](#13-limites-e-cors): Endurecer a borda HTTP e WebSocket com limites e política de origem.
-14. [Imagem Docker mais enxuta](#14-imagem-docker-mais-enxuta): Reduzir superfície de ataque e footprint do runtime.
+3. [Melhorar isolamento entre os testes](#3-melhorar-isolamento-entre-os-testes): Garantir cenário 100% limpo entre testes e permitir execução concorrente.
+4. [Replay da Dead Queue](#4-replay-da-dead-queue): Endpoint ou CLI para re-injetar manualmente mensagens que falharam definitivamente.
+5. [Métricas Prometheus](#5-métricas-prometheus): Monitoramento contínuo de webhooks, latência, profundidade da DLQ e WebSockets.
+6. [Fault injection nos testes](#6-fault-injection-nos-testes): Simulação de erros no Redis/Postgres para cobrir fluxos de falha reais.
+7. [Backpressure no broadcaster](#7-backpressure-no-broadcaster): Drop explícito de mensagens para clientes WS lentos, evitando gargalos globais.
+8. [Rotação de CPF_KEY](#8-rotação-de-cpf_key): Estratégia de versionamento para permitir a troca segura do segredo de hash.
+9. [Mascaramento de dados](#9-mascaramento-de-dados): Ocultação automática de informações sensíveis em logs e stack traces.
+10. [Expansão de testes e DLQ](#10-expansão-de-testes-e-dlq): Cobertura explícita dos fluxos de retry/dead em Redis e revisão do desenho da fila.
+11. [Extrair fixtures de autenticação](#11-extrair-fixtures-de-autenticação): Extrair o client/fixture de autenticação compartilhado entre módulos de teste.
+12. [Validador mais robusto](#12-validador-mais-robusto): Trocar validações manuais por uma lib Go como `go-playground/validator/v10`.
+13. [Property tests](#13-property-tests): Validar invariantes com geração de casos em vez de depender só de exemplos fixos.
+14. [Limites e CORS](#14-limites-e-cors): Endurecer a borda HTTP e WebSocket com limites e política de origem.
+15. [Imagem Docker mais enxuta](#15-imagem-docker-mais-enxuta): Reduzir superfície de ataque e footprint do runtime.
 
 ---
 
@@ -164,40 +165,45 @@ Serviço Go enxuto no ambiente local/de testes.
 ### 2. Rate limit e cap de conexões
 * **Proteção API/WS:** Restringir abusos de `POST /webhook` por emissor e limitar conexões ativas por IP no WebSocket (ex: max 1-2 por IP). A ser aplicado no API Gateway ou Load Balancer.
 
-### 3. Replay da Dead Queue
+### 3. Melhorar isolamento entre os testes
+* **Objetivo:** Garantir cenário 100% limpo entre testes e permitir execução concorrente.
+* **Motivação:** Hoje os testes compartilham o Postgres principal (apoiados em `tx.Begin/Rollback`) e um Redis isolado por DB index com `FlushDB`. Resíduos de execuções antigas já vazaram para o DB principal e mascararam falhas reais. Além disso, o estado compartilhado impede rodar testes em paralelo (`-parallel`) sem risco de colisão.
+* **Direção:** Cada pacote/teste com seu próprio schema Postgres (ou DB transient via testcontainers) e Redis namespaceado por execução, eliminando dependência de estado entre runs.
+
+### 4. Replay da Dead Queue
 * **Ferramental:** Criar um endpoint admin ou CLI para listar e re-enfileirar mensagens que esgotaram as retentativas e caíram na lista terminal (`dlq:webhooks:dead`).
 
-### 4. Métricas Prometheus
+### 5. Métricas Prometheus
 * **Observabilidade:** Expor `/metrics` para contadores vitais: webhooks recebidos, taxas de erro, profundidade da fila DLQ e quantidade de webSockets simultâneos.
 
-### 5. Fault injection nos testes
+### 6. Fault injection nos testes
 * **Resiliência:** Implementar helpers que forçam erros nos pools do Redis/Postgres durante os testes de integração para validar as ramificações de fallback e DLQ.
 
-### 6. Backpressure no broadcaster
+### 7. Backpressure no broadcaster
 * **Prevenção de gargalos:** Adicionar políticas de *drop* (descarte explícito) em canais Go do WebSocket caso o cliente esteja consumindo muito devagar, evitando travar a *goroutine* assinante.
 
-### 7. Rotação de CPF_KEY
+### 8. Rotação de CPF_KEY
 * **Segurança:** Implementar versionamento de chaves para o HMAC do CPF. Exige criar estratégia para lidar com logs e históricos antigos quando o segredo for rotacionado.
 
-### 8. Mascaramento de dados
+### 9. Mascaramento de dados
 * **Segurança de Operação:** Adicionar middlewares e formatadores no logger estruturado para garantir que dados sensíveis (citizen_ref, cpf, ips) não vazem em stack traces e logs.
 
-### 9. Expansão de testes e DLQ
+### 10. Expansão de testes e DLQ
 * **Resiliência e clareza:** Expandir a suíte com cenários mais explícitos da DLQ em Redis, cobrindo `retry` (`ZSET`), `dead` (`LIST`), backoff exponencial e falhas de Postgres/Redis. Em paralelo, revisitar o desenho da DLQ para deixar mais claro o que é fila temporária, o que é terminal e onde cada responsabilidade vive.
 
-### 10. Extrair fixtures de autenticação
+### 11. Extrair fixtures de autenticação
 * **Extrair o client/fixture de autenticação compartilhado entre módulos.** Hoje ainda existe repetição entre testes de autenticação, webhook e notificação.
 
-### 11. Validador mais robusto
+### 12. Validador mais robusto
 * **Substituir validações manuais por `go-playground/validator/v10` ou lib equivalente, para reduzir boilerplate e centralizar erros de payload.**
 
-### 12. Property tests
+### 13. Property tests
 * **Introduzir testes baseados em propriedades para assinatura, parsing de payload, idempotência e regras da DLQ. A ideia é validar invariantes, não só exemplos fixos.**
 
-### 13. Limites e CORS
+### 14. Limites e CORS
 * **Definir limites explícitos e política de CORS para `POST /webhook`, REST e WebSocket, evitando abuso e deixando o comportamento de borda mais previsível.**
 
-### 14. Imagem Docker mais enxuta
+### 15. Imagem Docker mais enxuta
 * **Trocar a imagem final por uma base mais mínima, preferencialmente distroless ou equivalente, para reduzir superfície de ataque e custo de runtime.**
 
 

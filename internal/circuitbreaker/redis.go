@@ -37,7 +37,7 @@ func (h *RedisHook) DialHook(next redis.DialHook) redis.DialHook {
 }
 
 // redis.Nil é sinal de "nenhum item disponível" (ex: GET em chave inexistente,
-// ZPOPMIN em ZSET vazio) — não é falha do Redis e não deve trippar o breaker.
+// ZPOPMIN em ZSET vazio) - não é falha do Redis e não deve trippar o breaker.
 func (h *RedisHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
 		_, err := h.cb.Execute(func() (interface{}, error) {
