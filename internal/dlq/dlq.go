@@ -67,18 +67,17 @@ return entries[1]
 func (q *Queue) dequeueReady(ctx context.Context) (*Entry, error) {
 	now := time.Now().UnixMilli()
 	res, err := popReadyScript.Run(ctx, q.rdb, []string{retryKey}, now).Result()
+	// O hook do circuit breaker (internal/circuitbreaker/redis.go) trata redis.Nil
+	// apenas pra não contabilizar como falha no breaker — o erro continua sendo
+	// propagado pelo cmd. Por isso o check aqui é necessário, não redundante.
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("dlq pop-ready: %w", err)
 	}
-	s, ok := res.(string)
-	if !ok || s == "" {
-		return nil, nil
-	}
 	var e Entry
-	if err := json.Unmarshal([]byte(s), &e); err != nil {
+	if err := json.Unmarshal([]byte(res.(string)), &e); err != nil {
 		return nil, fmt.Errorf("dlq unmarshal: %w", err)
 	}
 	return &e, nil

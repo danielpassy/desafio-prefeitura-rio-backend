@@ -36,17 +36,16 @@ func (h *RedisHook) DialHook(next redis.DialHook) redis.DialHook {
 	}
 }
 
+// redis.Nil é sinal de "nenhum item disponível" (ex: GET em chave inexistente,
+// ZPOPMIN em ZSET vazio) — não é falha do Redis e não deve trippar o breaker.
 func (h *RedisHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
 		_, err := h.cb.Execute(func() (interface{}, error) {
-			if err := next(ctx, cmd); err != nil {
-				// Redis.Nil aqui significa "nenhum item disponível", não uma falha real do Redis.
-				if errors.Is(err, redis.Nil) {
-					return nil, nil
-				}
-				return nil, err
+			err := next(ctx, cmd)
+			if errors.Is(err, redis.Nil) {
+				return nil, nil
 			}
-			return nil, nil
+			return nil, err
 		})
 		return err
 	}
@@ -55,14 +54,11 @@ func (h *RedisHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 func (h *RedisHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(ctx context.Context, cmds []redis.Cmder) error {
 		_, err := h.cb.Execute(func() (interface{}, error) {
-			if err := next(ctx, cmds); err != nil {
-				// Redis.Nil aqui significa "nenhum item disponível", não uma falha real do Redis.
-				if errors.Is(err, redis.Nil) {
-					return nil, nil
-				}
-				return nil, err
+			err := next(ctx, cmds)
+			if errors.Is(err, redis.Nil) {
+				return nil, nil
 			}
-			return nil, nil
+			return nil, err
 		})
 		return err
 	}
